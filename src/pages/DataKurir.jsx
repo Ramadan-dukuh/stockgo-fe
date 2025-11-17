@@ -14,6 +14,14 @@ import {
   UserX,
   Activity,
   Star,
+  X,
+  Check,
+  Navigation,
+  Shield,
+  Truck,
+  Calendar,
+  Award,
+  Package,
 } from "lucide-react";
 
 export default function DataKurir() {
@@ -25,17 +33,21 @@ export default function DataKurir() {
   const [loading, setLoading] = useState(false);
   const [totalData, setTotalData] = useState(0);
 
-  // Modal state (ganti prompt/alert)
+  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null); // 'rating' | 'status'
   const [selectedCourier, setSelectedCourier] = useState(null);
   const [modalValue, setModalValue] = useState("");
 
+  // Detail modal state
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailData, setDetailData] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
   // Fetch data dari API
   const fetchKurirs = async () => {
     try {
       setLoading(true);
-
       const res = await fetch(
         `http://localhost:3000/api/kurir?page=${page}&limit=${limit}`
       );
@@ -52,6 +64,24 @@ export default function DataKurir() {
     }
   };
 
+  // Fetch detail kurir
+  const fetchKurirDetail = async (id) => {
+    try {
+      setLoadingDetail(true);
+      const res = await fetch(`http://localhost:3000/api/kurir/${id}`);
+      const json = await res.json();
+
+      if (json.success) {
+        setDetailData(json.data);
+        setDetailModalOpen(true);
+      }
+    } catch (err) {
+      console.error("Fetch detail error:", err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
   useEffect(() => {
     fetchKurirs();
   }, [page]);
@@ -65,6 +95,10 @@ export default function DataKurir() {
         body: JSON.stringify({ status }),
       });
       fetchKurirs();
+      // Refresh detail data jika sedang dibuka
+      if (detailData && detailData.id === id) {
+        fetchKurirDetail(id);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -79,6 +113,10 @@ export default function DataKurir() {
         body: JSON.stringify({ rating }),
       });
       fetchKurirs();
+      // Refresh detail data jika sedang dibuka
+      if (detailData && detailData.id === id) {
+        fetchKurirDetail(id);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -372,7 +410,10 @@ export default function DataKurir() {
 
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2">
-                        <button className="p-2 hover:bg-blue-50 rounded-lg transition-colors group">
+                        <button
+                          onClick={() => fetchKurirDetail(k.id)}
+                          className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
+                        >
                           <Eye className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
                         </button>
                       </div>
@@ -420,7 +461,7 @@ export default function DataKurir() {
         </div>
       </div>
 
-      {/* Modal (ganti prompt/alert) */}
+      {/* Modal Edit Rating/Status */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
@@ -478,6 +519,264 @@ export default function DataKurir() {
                 Simpan
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {detailModalOpen && detailData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setDetailModalOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto z-10">
+            {loadingDetail ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                  <p className="text-slate-600 font-medium">Memuat detail...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 rounded-t-2xl">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg">
+                        {detailData.user.full_name.charAt(0)}
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-white">
+                          {detailData.user.full_name}
+                        </h2>
+                        <p className="text-blue-100 font-mono">
+                          {detailData.employee_id}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setDetailModalOpen(false)}
+                      className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Kolom Kiri - Informasi Personal */}
+                    <div className="lg:col-span-2 space-y-6">
+                      {/* Status & Rating */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Activity className="w-4 h-4 text-blue-600" />
+                            <span className="text-sm font-medium text-slate-600">
+                              Status
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            {getStatusBadge(detailData.status)}
+                            <button
+                              onClick={() => openModal("status", detailData)}
+                              className="p-1 hover:bg-slate-200 rounded transition-colors"
+                            >
+                              <Edit2 className="w-3 h-3 text-slate-500" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                            <span className="text-sm font-medium text-slate-600">
+                              Rating
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xl font-bold text-slate-800">
+                              {detailData.rating}
+                            </span>
+                            <button
+                              onClick={() => openModal("rating", detailData)}
+                              className="p-1 hover:bg-slate-200 rounded transition-colors"
+                            >
+                              <Edit2 className="w-3 h-3 text-slate-500" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Informasi Kontak */}
+                      <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Users className="w-5 h-5 text-blue-600" />
+                          Informasi Kontak
+                        </h3>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3">
+                            <Mail className="w-4 h-4 text-slate-400" />
+                            <div>
+                              <p className="text-sm text-slate-600">Email</p>
+                              <p className="text-slate-800 font-medium">
+                                {detailData.user.email}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Phone className="w-4 h-4 text-slate-400" />
+                            <div>
+                              <p className="text-sm text-slate-600">Telepon</p>
+                              <p className="text-slate-800 font-medium">
+                                {detailData.user.phone}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Shield className="w-4 h-4 text-slate-400" />
+                            <div>
+                              <p className="text-sm text-slate-600">
+                                Status Akun
+                              </p>
+                              <span
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  detailData.user.is_active
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-red-100 text-red-700"
+                                }`}
+                              >
+                                {detailData.user.is_active
+                                  ? "Aktif"
+                                  : "Nonaktif"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Informasi Kendaraan */}
+                      <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Truck className="w-5 h-5 text-blue-600" />
+                          Informasi Kendaraan
+                        </h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-sm text-slate-600 mb-1">
+                              Jenis Kendaraan
+                            </p>
+                            <p className="text-slate-800 font-medium">
+                              {detailData.vehicle_type}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600 mb-1">
+                              Plat Nomor
+                            </p>
+                            <p className="text-slate-800 font-mono font-medium">
+                              {detailData.vehicle_plate}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600 mb-1">
+                              Nomor SIM
+                            </p>
+                            <p className="text-slate-800 font-medium">
+                              {detailData.license_number}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600 mb-1">
+                              Kapasitas Maksimal
+                            </p>
+                            <p className="text-slate-800 font-medium">
+                              {detailData.max_capacity || "Tidak ditentukan"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Kolom Kanan - Statistik & Info Tambahan */}
+                    <div className="space-y-6">
+                      {/* Statistik */}
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border border-blue-200">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <TrendingUp className="w-5 h-5 text-blue-600" />
+                          Statistik
+                        </h3>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-slate-600">
+                              Total Pengiriman
+                            </span>
+                            <span className="font-bold text-slate-800">
+                              {detailData.total_deliveries}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-slate-600">
+                              Rating
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                              <span className="font-bold text-slate-800">
+                                {detailData.rating}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Lokasi */}
+                      <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Navigation className="w-5 h-5 text-blue-600" />
+                          Lokasi Terkini
+                        </h3>
+                        <div className="bg-white rounded-lg p-3 border">
+                          <p className="text-sm font-mono text-slate-700 text-center">
+                            {detailData.current_location ||
+                              "Lokasi tidak tersedia"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Informasi Sistem */}
+                      <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Calendar className="w-5 h-5 text-blue-600" />
+                          Informasi Sistem
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-slate-600">Dibuat</span>
+                            <span className="text-slate-800">
+                              {new Date(
+                                detailData.created_at
+                              ).toLocaleDateString("id-ID")}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-600">Diupdate</span>
+                            <span className="text-slate-800">
+                              {new Date(
+                                detailData.updated_at
+                              ).toLocaleDateString("id-ID")}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

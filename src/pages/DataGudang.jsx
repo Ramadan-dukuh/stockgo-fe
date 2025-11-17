@@ -31,7 +31,7 @@ export default function DataGudang() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // data holders
-  const [detailData, setDetailData] = useState(null); // full detail for selected item
+  const [detailData, setDetailData] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
 
   // form for create
@@ -47,14 +47,14 @@ export default function DataGudang() {
     email: "",
   });
 
-  // form for edit (separate so editing doesn't mutate detail until saved)
+  // form for edit
   const [editForm, setEditForm] = useState({ ...formData });
 
   // simple notification state
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
 
-  // --- load list (page/limit currently fixed) ---
+  // --- load list ---
   const loadWarehouses = async (page = 1, limit = 10) => {
     try {
       setLoadingList(true);
@@ -64,7 +64,6 @@ export default function DataGudang() {
       if (!res.ok) {
         throw new Error(json.message || "Gagal mengambil data");
       }
-      // API structure: { data: { warehouses: [ ... ] } }
       setWarehouses(json.data?.warehouses ?? []);
     } catch (err) {
       console.error(err);
@@ -100,7 +99,6 @@ export default function DataGudang() {
         throw new Error(json.message || "Gagal menambah gudang");
       }
       setShowAddModal(false);
-      // reset form
       setFormData({
         name: "",
         code: "",
@@ -133,7 +131,7 @@ export default function DataGudang() {
       const res = await fetch(`${API_BASE}/${id}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Gagal ambil detail");
-      setDetailData(json.data ?? json); // accommodate APIs that return directly
+      setDetailData(json.data ?? json);
       setShowDetailModal(true);
     } catch (err) {
       console.error(err);
@@ -148,7 +146,6 @@ export default function DataGudang() {
   // ============================
   const openEditFromDetail = () => {
     if (!detailData) return;
-    // copy fields into editForm
     setEditForm({
       name: detailData.name ?? "",
       code: detailData.code ?? "",
@@ -236,21 +233,6 @@ export default function DataGudang() {
     );
   });
 
-  // ---------- simple Input component helper ----------
-  const Input = ({ icon: Icon, className = "", ...rest }) => (
-    <div className={`relative ${className}`}>
-      {Icon && (
-        <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-      )}
-      <input
-        {...rest}
-        className={`w-full p-2 pl-${
-          Icon ? "10" : "3"
-        } rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm`}
-      />
-    </div>
-  );
-
   // ----------------- render -----------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
@@ -267,28 +249,28 @@ export default function DataGudang() {
         </p>
       </div>
 
-      {/* card */}
+      {/* main card */}
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-        {/* top */}
+        {/* header with search and button */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6">
-          <div className="flex flex-col md:flex-row justify-between gap-4">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <h2 className="text-xl font-semibold text-white">Daftar Gudang</h2>
 
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative">
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+              <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Cari gudang..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="bg-white pl-10 pr-4 py-2 rounded-lg border w-full sm:w-64 text-sm"
+                  className="w-full bg-white pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
               <button
                 onClick={() => setShowAddModal(true)}
-                className="bg-white text-blue-700 px-5 py-2 rounded-lg font-medium hover:bg-blue-50 flex items-center gap-2 shadow-md"
+                className="bg-white text-blue-700 px-5 py-2.5 rounded-lg font-medium hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 shadow-md whitespace-nowrap"
               >
                 <Plus className="w-5 h-5" />
                 Tambah Gudang
@@ -300,32 +282,55 @@ export default function DataGudang() {
         {/* table */}
         <div className="overflow-x-auto">
           {loadingList ? (
-            <div className="p-6 text-center text-slate-500">Memuat data...</div>
+            <div className="p-8 text-center text-slate-500">
+              <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mb-2"></div>
+              <div>Memuat data...</div>
+            </div>
           ) : errorList ? (
-            <div className="p-6 text-center text-red-600">
-              Error: {errorList}
+            <div className="p-8 text-center text-red-600 bg-red-50 mx-6 my-4 rounded-lg">
+              <div className="font-medium">Error: {errorList}</div>
+              <button
+                onClick={() => loadWarehouses()}
+                className="mt-2 text-blue-600 hover:text-blue-800 text-sm"
+              >
+                Coba lagi
+              </button>
             </div>
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="bg-slate-50 border-b">
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase">
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                     Kode
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                     Nama
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                     Kota
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    Tipe
                   </th>
                 </tr>
               </thead>
 
-              <tbody>
+              <tbody className="divide-y divide-slate-200">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="p-6 text-center text-slate-500">
-                      Tidak ada data
+                    <td
+                      colSpan={4}
+                      className="px-6 py-8 text-center text-slate-500"
+                    >
+                      <div className="flex flex-col items-center">
+                        <Warehouse className="w-12 h-12 text-slate-300 mb-2" />
+                        <p>Tidak ada data gudang</p>
+                        {searchTerm && (
+                          <p className="text-sm mt-1">
+                            Tidak ditemukan hasil untuk "{searchTerm}"
+                          </p>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -333,11 +338,39 @@ export default function DataGudang() {
                     <tr
                       key={g.id}
                       onClick={() => openDetailModal(g.id)}
-                      className="hover:bg-slate-50 cursor-pointer border-b"
+                      className="hover:bg-slate-50 cursor-pointer transition-colors group"
                     >
-                      <td className="px-6 py-4">{g.code}</td>
-                      <td className="px-6 py-4">{g.name}</td>
-                      <td className="px-6 py-4">{g.city}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <Hash className="w-4 h-4 text-slate-400" />
+                          <span className="font-mono text-sm font-medium text-blue-600">
+                            {g.code}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-slate-400" />
+                          <span className="font-medium">{g.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-slate-400" />
+                          <span>{g.city}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            g.type === "main"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-green-100 text-green-800"
+                          }`}
+                        >
+                          {g.type === "main" ? "Main" : "Branch"}
+                        </span>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -346,158 +379,186 @@ export default function DataGudang() {
           )}
         </div>
 
-        <div className="bg-slate-50 px-6 py-4 border-t text-sm text-slate-600">
-          Total: {warehouses.length} gudang
+        {/* footer */}
+        <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 text-sm text-slate-600 flex justify-between items-center">
+          <span>Total: {warehouses.length} gudang</span>
+          {filtered.length !== warehouses.length && (
+            <span className="text-blue-600">
+              {filtered.length} hasil pencarian
+            </span>
+          )}
         </div>
       </div>
 
       {/* =============== ADD MODAL =============== */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xl animate-scale">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold flex items-center gap-2">
-                <Plus className="w-5 h-5" />
-                Tambah Gudang
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+              <h3 className="text-xl font-semibold flex items-center gap-2 text-slate-800">
+                <Plus className="w-5 h-5 text-blue-600" />
+                Tambah Gudang Baru
               </h3>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-2 rounded hover:bg-slate-100"
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="text-xs text-slate-600">Nama Gudang</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nama Gudang <span className="text-red-500">*</span>
+                </label>
                 <input
                   value={formData.name}
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="input mt-1"
-                  placeholder="Nama Gudang"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                  placeholder="Masukkan nama gudang"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Kode</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Kode Gudang <span className="text-red-500">*</span>
+                </label>
                 <input
                   value={formData.code}
                   onChange={(e) =>
                     setFormData({ ...formData, code: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                   placeholder="GDG-XXX-001"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Tipe</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Tipe Gudang
+                </label>
                 <select
                   value={formData.type}
                   onChange={(e) =>
                     setFormData({ ...formData, type: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 >
-                  <option value="main">Main</option>
-                  <option value="branch">Branch</option>
+                  <option value="main">Main Gudang</option>
+                  <option value="branch">Branch Gudang</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Kota</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Kota <span className="text-red-500">*</span>
+                </label>
                 <input
                   value={formData.city}
                   onChange={(e) =>
                     setFormData({ ...formData, city: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                   placeholder="Jakarta"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Provinsi</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Provinsi <span className="text-red-500">*</span>
+                </label>
                 <input
                   value={formData.province}
                   onChange={(e) =>
                     setFormData({ ...formData, province: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                   placeholder="DKI Jakarta"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Kode Pos</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Kode Pos
+                </label>
                 <input
                   value={formData.postal_code}
                   onChange={(e) =>
                     setFormData({ ...formData, postal_code: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                   placeholder="12345"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Telepon</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Telepon
+                </label>
                 <input
                   value={formData.phone}
                   onChange={(e) =>
                     setFormData({ ...formData, phone: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                   placeholder="021-xxxxxxx"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Email</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Email
+                </label>
                 <input
                   value={formData.email}
                   onChange={(e) =>
                     setFormData({ ...formData, email: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                   placeholder="gudang@company.com"
                 />
               </div>
 
-              <div className="col-span-2">
-                <label className="text-xs text-slate-600">Alamat Lengkap</label>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Alamat Lengkap <span className="text-red-500">*</span>
+                </label>
                 <textarea
                   value={formData.address}
                   onChange={(e) =>
                     setFormData({ ...formData, address: e.target.value })
                   }
-                  className="input mt-1 h-24"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors h-24 resize-none"
                   placeholder="Jl. Raya No..."
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 mt-5">
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
               <button
                 onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 rounded-lg border"
+                className="px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
               >
                 Batal
               </button>
 
               <button
                 onClick={handleAddWarehouse}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2"
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={busy}
               >
                 {busy ? (
-                  "Menyimpan..."
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Menyimpan...
+                  </>
                 ) : (
                   <>
-                    <Check className="w-4 h-4" /> Simpan
+                    <Check className="w-4 h-4" />
+                    Simpan Gudang
                   </>
                 )}
               </button>
@@ -509,117 +570,169 @@ export default function DataGudang() {
       {/* =============== DETAIL MODAL =============== */}
       {showDetailModal && detailData && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xl animate-scale">
-            <div className="flex items-start justify-between mb-4">
-              <h3 className="text-xl font-semibold">Detail Gudang</h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setShowDetailModal(false);
-                    setDetailData(null);
-                    setSelectedId(null);
-                  }}
-                  className="p-2 rounded hover:bg-slate-100"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-6 pb-4 border-b border-slate-200">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-800">
+                  Detail Gudang
+                </h3>
+                <p className="text-slate-600 text-sm mt-1">
+                  Informasi lengkap gudang
+                </p>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>NAME:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.name || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>CODE:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.code || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>TYPE:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.type || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>CITY:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.city || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50 col-span-2">
-                <strong>ADDRESS:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.address || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>PROVINCE:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.province || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>POSTAL CODE:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.postal_code || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>PHONE:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.phone || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>EMAIL:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.email || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>CREATED AT:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.created_at || "-"}
-                </div>
-              </div>
-
-              <div className="p-3 border rounded-lg bg-slate-50">
-                <strong>UPDATED AT:</strong>
-                <div className="mt-1 text-slate-700">
-                  {detailData.updated_at || "-"}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => {
-                  openEditFromDetail();
+                  setShowDetailModal(false);
+                  setDetailData(null);
+                  setSelectedId(null);
                 }}
-                className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg flex items-center gap-2"
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
               >
-                <Edit2 className="w-4 h-4" /> Edit
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Nama Gudang
+                  </span>
+                </div>
+                <p className="text-slate-800 font-medium">
+                  {detailData.name || "-"}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Hash className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Kode Gudang
+                  </span>
+                </div>
+                <p className="text-slate-800 font-mono font-medium">
+                  {detailData.code || "-"}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Tipe Gudang
+                  </span>
+                </div>
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    detailData.type === "main"
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-green-100 text-green-800"
+                  }`}
+                >
+                  {detailData.type === "main" ? "Main Gudang" : "Branch Gudang"}
+                </span>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Kota
+                  </span>
+                </div>
+                <p className="text-slate-800">{detailData.city || "-"}</p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Provinsi
+                  </span>
+                </div>
+                <p className="text-slate-800">{detailData.province || "-"}</p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Hash className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Kode Pos
+                  </span>
+                </div>
+                <p className="text-slate-800">
+                  {detailData.postal_code || "-"}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Phone className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Telepon
+                  </span>
+                </div>
+                <p className="text-slate-800">{detailData.phone || "-"}</p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mail className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Email
+                  </span>
+                </div>
+                <p className="text-slate-800">{detailData.email || "-"}</p>
+              </div>
+
+              <div className="md:col-span-2 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-slate-600">
+                    Alamat Lengkap
+                  </span>
+                </div>
+                <p className="text-slate-800 whitespace-pre-line">
+                  {detailData.address || "-"}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="text-sm font-medium text-slate-600 mb-2">
+                  Dibuat Pada
+                </div>
+                <p className="text-slate-800 text-sm">
+                  {detailData.created_at || "-"}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="text-sm font-medium text-slate-600 mb-2">
+                  Diupdate Pada
+                </div>
+                <p className="text-slate-800 text-sm">
+                  {detailData.updated_at || "-"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
+              <button
+                onClick={openEditFromDetail}
+                className="px-5 py-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-2 font-medium"
+              >
+                <Edit2 className="w-4 h-4" />
+                Edit
               </button>
 
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="px-4 py-2 bg-red-100 text-red-700 rounded-lg flex items-center gap-2"
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 font-medium"
               >
-                <Trash2 className="w-4 h-4" /> Hapus
+                <Trash2 className="w-4 h-4" />
+                Hapus
               </button>
 
               <button
@@ -628,7 +741,7 @@ export default function DataGudang() {
                   setDetailData(null);
                   setSelectedId(null);
                 }}
-                className="px-4 py-2 rounded-lg border"
+                className="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
               >
                 Tutup
               </button>
@@ -640,14 +753,15 @@ export default function DataGudang() {
       {/* =============== EDIT MODAL =============== */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xl animate-scale">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold flex items-center gap-2">
-                <Edit2 className="w-5 h-5" /> Edit Gudang
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+              <h3 className="text-xl font-semibold flex items-center gap-2 text-slate-800">
+                <Edit2 className="w-5 h-5 text-blue-600" />
+                Edit Data Gudang
               </h3>
               <button
                 onClick={() => setShowEditModal(false)}
-                className="p-2 rounded hover:bg-slate-100"
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -655,124 +769,149 @@ export default function DataGudang() {
 
             <form
               onSubmit={handleUpdateWarehouse}
-              className="grid grid-cols-2 gap-3"
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
             >
-              <div className="col-span-2">
-                <label className="text-xs text-slate-600">Nama Gudang</label>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nama Gudang
+                </label>
                 <input
                   value={editForm.name}
                   onChange={(e) =>
                     setEditForm({ ...editForm, name: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Kode</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Kode Gudang
+                </label>
                 <input
                   value={editForm.code}
                   onChange={(e) =>
                     setEditForm({ ...editForm, code: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Tipe</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Tipe Gudang
+                </label>
                 <select
                   value={editForm.type}
                   onChange={(e) =>
                     setEditForm({ ...editForm, type: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 >
-                  <option value="main">Main</option>
-                  <option value="branch">Branch</option>
+                  <option value="main">Main Gudang</option>
+                  <option value="branch">Branch Gudang</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Kota</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Kota
+                </label>
                 <input
                   value={editForm.city}
                   onChange={(e) =>
                     setEditForm({ ...editForm, city: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Provinsi</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Provinsi
+                </label>
                 <input
                   value={editForm.province}
                   onChange={(e) =>
                     setEditForm({ ...editForm, province: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Kode Pos</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Kode Pos
+                </label>
                 <input
                   value={editForm.postal_code}
                   onChange={(e) =>
                     setEditForm({ ...editForm, postal_code: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Telepon</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Telepon
+                </label>
                 <input
                   value={editForm.phone}
                   onChange={(e) =>
                     setEditForm({ ...editForm, phone: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-slate-600">Email</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Email
+                </label>
                 <input
                   value={editForm.email}
                   onChange={(e) =>
                     setEditForm({ ...editForm, email: e.target.value })
                   }
-                  className="input mt-1"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 />
               </div>
 
-              <div className="col-span-2">
-                <label className="text-xs text-slate-600">Alamat Lengkap</label>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Alamat Lengkap
+                </label>
                 <textarea
                   value={editForm.address}
                   onChange={(e) =>
                     setEditForm({ ...editForm, address: e.target.value })
                   }
-                  className="input mt-1 h-24"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors h-24 resize-none"
                 />
               </div>
 
-              <div className="col-span-2 flex justify-end gap-3 mt-2">
+              <div className="md:col-span-2 flex justify-end gap-3 mt-2 pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 rounded-lg border"
+                  className="px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={busy}
                 >
-                  {busy ? "Menyimpan..." : "Simpan Perubahan"}
+                  {busy ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></div>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    "Simpan Perubahan"
+                  )}
                 </button>
               </div>
             </form>
@@ -783,26 +922,45 @@ export default function DataGudang() {
       {/* =============== DELETE CONFIRM =============== */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md animate-scale text-center">
-            <h3 className="text-lg font-semibold mb-2">Hapus Gudang</h3>
-            <p className="text-sm text-slate-600">
-              Yakin ingin menghapus gudang <strong>{detailData?.name}</strong>?
-              Tindakan ini tidak bisa dikembalikan.
-            </p>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-800 mb-2">
+                Hapus Gudang
+              </h3>
+              <p className="text-sm text-slate-600 mb-2">
+                Anda akan menghapus gudang:
+              </p>
+              <p className="font-medium text-slate-800 mb-2">
+                {detailData?.name}
+              </p>
+              <p className="text-sm text-slate-600">
+                Tindakan ini tidak bisa dikembalikan. Yakin ingin melanjutkan?
+              </p>
+            </div>
 
-            <div className="flex justify-center gap-3 mt-5">
+            <div className="flex justify-center gap-3 mt-6">
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="px-4 py-2 rounded-lg border"
+                className="px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium flex-1"
               >
                 Batal
               </button>
               <button
                 onClick={handleDeleteWarehouse}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg"
+                className="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={busy}
               >
-                {busy ? "Menghapus..." : "Hapus Sekarang"}
+                {busy ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></div>
+                    Menghapus...
+                  </>
+                ) : (
+                  "Hapus Sekarang"
+                )}
               </button>
             </div>
           </div>
@@ -811,8 +969,11 @@ export default function DataGudang() {
 
       {/* toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg z-60">
-          {toast}
+        <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-3 rounded-lg shadow-lg z-60 animate-in slide-in-from-right-8 duration-300">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-green-400" />
+            {toast}
+          </div>
         </div>
       )}
     </div>

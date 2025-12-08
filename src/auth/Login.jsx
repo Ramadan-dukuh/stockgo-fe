@@ -8,8 +8,9 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // auth/Login.js (perbaikan di handleSubmit)
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Mencegah reload halaman pada form submission
+    e.preventDefault();
 
     // Validasi input
     if (!email.trim() || !password.trim()) {
@@ -52,27 +53,25 @@ export default function Login() {
         return;
       }
 
-      // ✅ TOKEN ADA DI data.token (sesuai respons API Anda)
-      const token = data.data?.token;
-
+      // ✅ SIMPAN TOKEN
+      const token = data.token || data.data?.token;
       if (!token) {
-        setError("Token tidak ditemukan dalam respons server");
+        setError("TOKEN TIDAK DITEMUKAN DI RESPONSE LOGIN!");
         return;
       }
 
-      // Simpan token ke localStorage
       localStorage.setItem("token", token);
 
-      // Simpan data user jika diperlukan (opsional)
+      // ✅ SIMPAN DATA USER KE LOCALSTORAGE
       if (data.data) {
         localStorage.setItem("user", JSON.stringify(data.data));
       }
 
-      // Redirect setelah login
+      // Redirect ke dashboard berdasarkan role
       window.location.href = "/";
     } catch (error) {
       console.error("LOGIN ERROR:", error);
-      setError("Terjadi kesalahan jaringan. Periksa koneksi Anda.");
+      setError("Terjadi kesalahan. Periksa koneksi Anda.");
     } finally {
       setLoading(false);
     }

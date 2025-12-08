@@ -1,15 +1,42 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+// App.js
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/layout";
 import Dashboard from "./pages/Dashboard";
 import DataGudang from "./pages/DataGudang";
 import DataBarang from "./pages/DataBarang";
 import DataKurir from "./pages/DataKurir";
 import DataPengiriman from "./pages/DataPengiriman";
+import DataEkspedisi from "./pages/DataEkspedisi";
 import Laporan from "./pages/Laporan";
 
 // Auth
 import Login from "./auth/Login";
 import Register from "./auth/Register";
+import { useAuth } from "./hooks/useAuth";
+
+import Unauthorized from "./pages/Unauthorized";
+// Protected Route Component
+const ProtectedRoute = ({ children, allowedRoles = [] }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  return <Layout>{children}</Layout>;
+};
 
 export default function App() {
   return (
@@ -19,60 +46,76 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Pages Dalam Layout (Sudah Ada Sidebar) */}
+        <Route path="/unauthorized" element={<Unauthorized />} />
+
+        {/* Admin Pages (Admin only) */}
         <Route
           path="/"
           element={
-            <Layout>
+            <ProtectedRoute
+              allowedRoles={["admin", "dispatcher", "petugas_gudang"]}
+            >
               <Dashboard />
-            </Layout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/gudang"
           element={
-            <Layout>
+            <ProtectedRoute allowedRoles={["admin", "petugas_gudang"]}>
               <DataGudang />
-            </Layout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/barang"
           element={
-            <Layout>
+            <ProtectedRoute allowedRoles={["admin", "petugas_gudang"]}>
               <DataBarang />
-            </Layout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/kurir"
           element={
-            <Layout>
+            <ProtectedRoute allowedRoles={["admin", "dispatcher"]}>
               <DataKurir />
-            </Layout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/pengiriman"
           element={
-            <Layout>
+            <ProtectedRoute allowedRoles={["admin", "dispatcher"]}>
               <DataPengiriman />
-            </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/ekspedisi"
+          element={
+            <ProtectedRoute allowedRoles={["admin", "dispatcher"]}>
+              <DataEkspedisi />
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/laporan"
           element={
-            <Layout>
+            <ProtectedRoute allowedRoles={["admin", "dispatcher"]}>
               <Laporan />
-            </Layout>
+            </ProtectedRoute>
           }
         />
+
+        {/* Catch all - redirect to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

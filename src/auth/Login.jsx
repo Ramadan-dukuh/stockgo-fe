@@ -6,9 +6,26 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault(); // Mencegah reload halaman pada form submission
+
+    // Validasi input
+    if (!email.trim() || !password.trim()) {
+      setError("Email dan password harus diisi");
+      return;
+    }
+
+    // Validasi format email sederhana
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Format email tidak valid");
+      return;
+    }
+
     setLoading(true);
+    setError("");
 
     try {
       const response = await fetch("http://localhost:3000/api/auth/login", {
@@ -17,29 +34,54 @@ export default function Login() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email: email,
-          password: password,
+          email: email.trim(),
+          password: password.trim(),
         }),
       });
 
       const data = await response.json();
+      console.log("LOGIN RESPONSE:", data);
 
       if (!response.ok) {
-        alert(data.message || "Login gagal.");
-      } else {
-        alert("Login berhasil!");
-        // Jika API memberi token:
-        if (data.token) {
-          localStorage.setItem("token", data.token);
-        }
-        // Redirect setelah login
-        window.location.href = "/";
+        setError(data.message || "Login gagal. Periksa kredensial Anda.");
+        return;
       }
-    } catch  {
-      alert("Terjadi kesalahan. Periksa koneksi Anda.");
-    }
 
-    setLoading(false);
+      if (!data.success) {
+        setError(data.message || "Login gagal.");
+        return;
+      }
+
+      // ✅ TOKEN ADA DI data.token (sesuai respons API Anda)
+      const token = data.data?.token;
+
+      if (!token) {
+        setError("Token tidak ditemukan dalam respons server");
+        return;
+      }
+
+      // Simpan token ke localStorage
+      localStorage.setItem("token", token);
+
+      // Simpan data user jika diperlukan (opsional)
+      if (data.data) {
+        localStorage.setItem("user", JSON.stringify(data.data));
+      }
+
+      // Redirect setelah login
+      window.location.href = "/";
+    } catch (error) {
+      console.error("LOGIN ERROR:", error);
+      setError("Terjadi kesalahan jaringan. Periksa koneksi Anda.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") {
+      handleSubmit(e);
+    }
   };
 
   return (
@@ -73,6 +115,13 @@ export default function Login() {
             Silakan masuk dengan akun Anda
           </p>
 
+          {/* Error Message */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
           <div className="space-y-5">
             {/* Email Input */}
             <div>
@@ -84,9 +133,14 @@ export default function Login() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError(""); // Clear error ketika user mulai mengetik
+                  }}
+                  onKeyPress={handleKeyPress}
                   placeholder="nama@email.com"
                   className="w-full pl-11 pr-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  disabled={loading}
                 />
               </div>
             </div>
@@ -101,13 +155,20 @@ export default function Login() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError(""); // Clear error ketika user mulai mengetik
+                  }}
+                  onKeyPress={handleKeyPress}
                   placeholder="Masukkan password"
                   className="w-full pl-11 pr-12 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  disabled={loading}
                 />
                 <button
+                  type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  disabled={loading}
                 >
                   {showPassword ? (
                     <EyeOff className="w-5 h-5" />
@@ -124,12 +185,15 @@ export default function Login() {
                 <input
                   type="checkbox"
                   className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                  disabled={loading}
                 />
                 <span className="ml-2 text-sm text-slate-600">Ingat saya</span>
               </label>
               <button
-                onClick={() => console.log("Forgot password")}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                type="button"
+                onClick={() => (window.location.href = "/forgot-password")}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium disabled:text-slate-400"
+                disabled={loading}
               >
                 Lupa password?
               </button>
@@ -138,11 +202,14 @@ export default function Login() {
             {/* Login Button */}
             <button
               onClick={handleSubmit}
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2"
+              disabled={loading || !email.trim() || !password.trim()}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-blue-600 disabled:hover:to-blue-700"
             >
               {loading ? (
-                "Memproses..."
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Memproses...
+                </>
               ) : (
                 <>
                   <LogIn className="w-5 h-5" /> Masuk
@@ -155,8 +222,10 @@ export default function Login() {
           <p className="mt-6 text-center text-sm text-slate-600">
             Belum punya akun?{" "}
             <button
+              type="button"
               onClick={() => (window.location.href = "/register")}
-              className="text-blue-600 hover:text-blue-700 font-semibold cursor-pointer"
+              className="text-blue-600 hover:text-blue-700 font-semibold cursor-pointer disabled:text-slate-400"
+              disabled={loading}
             >
               Daftar Sekarang
             </button>

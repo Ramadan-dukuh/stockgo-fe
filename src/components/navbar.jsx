@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 
 function Navbar({ onToggle }) {
   const base_url = "http://localhost:3000"; // GANTI JIKA PERLU
+  const token = localStorage.getItem("token");
 
   const [dropdown, setDropdown] = useState(false);
   const [user, setUser] = useState({
@@ -11,13 +12,62 @@ function Navbar({ onToggle }) {
     avatar: "https://i.pravatar.cc/100",
   });
 
-  // GET PROFILE FROM API
+  // GET PROFILE FROM API  // ...existing code...
+    useEffect(() => {
+      const fetchProfile = async () => {
+        try {
+          if (!token) {
+            console.warn("No token found in localStorage");
+            // optional: redirect to login
+            // window.location.href = "/login";
+            return;
+          }
+  
+          const res = await fetch(`${base_url}/api/auth/profile`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            // jika backend mengandalkan cookie/session, uncomment:
+            // credentials: "include",
+          });
+  
+          if (res.status === 401) {
+            console.warn("Unauthorized (401) when fetching profile");
+            localStorage.removeItem("token");
+            window.location.href = "/login";
+            return;
+          }
+  
+          const result = await res.json();
+  
+          if (result.success) {
+            const data = result.data;
+            setUser({
+              full_name: data.full_name,
+              role_name: data.role?.name || "User",
+              avatar: "https://i.pravatar.cc/100",
+            });
+          } else {
+            console.warn("Gagal mengambil profile:", result.message);
+          }
+        } catch (err) {
+          console.error("Error fetch profile:", err);
+        }
+      };
+  
+      fetchProfile();
+    }, []);
+  // ...existing code...
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await fetch(`${base_url}/api/auth/profile`, {
-          credentials: "include",
-        });
+        const res = await fetch(`${base_url}/api/auth/profile`, {         
+        headers: {
+          Authorization: `Bearer ${token}`, // ✅ WAJIB INI
+          "Content-Type": "application/json",
+        },
+      });        
 
         const result = await res.json();
 
@@ -39,27 +89,11 @@ function Navbar({ onToggle }) {
     fetchProfile();
   }, []);
 
-  // LOGOUT
-  const handleLogout = async () => {
-    try {
-      const res = await fetch(`${base_url}/api/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-
-      const result = await res.json();
-
-      if (res.ok && result.success) {
-        alert("Logout berhasil");
-        window.location.href = "/login";
-      } else {
-        alert("Logout gagal");
-      }
-    } catch (err) {
-      console.error("Logout error:", err);
-      alert("Terjadi kesalahan saat logout");
-    }
-  };
+  // LOGOUT  
+    const handleLogout = () => {
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+    };  
 
   return (
     <div className="w-full h-16 bg-white shadow-md flex items-center justify-between px-6 relative z-40">

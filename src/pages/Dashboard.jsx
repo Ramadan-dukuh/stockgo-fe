@@ -26,6 +26,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [backendStatus, setBackendStatus] = useState("checking");
+  const [chartData, setChartData] = useState(null);
 
   // Fungsi untuk mendapatkan token
   const getToken = () => {
@@ -39,14 +40,38 @@ function Dashboard() {
 
   // === FETCH API ===
   useEffect(() => {
-    fetchAll();
-    // Setup chart setelah data selesai di-fetch
-    const timer = setTimeout(setupChart, 1000);
+    try {
+      fetchAll();
+    } catch (error) {
+      console.error("Error in fetchAll useEffect:", error);
+      setLoading(false);
+      setError("Terjadi kesalahan saat memuat data");
+    }
     return () => {
-      clearTimeout(timer);
-      if (chartInstance.current) chartInstance.current.destroy();
+      if (chartInstance.current) {
+        try {
+          chartInstance.current.destroy();
+        } catch (error) {
+          console.error("Error destroying chart:", error);
+        }
+      }
     };
   }, []);
+
+  // Setup chart ketika chartData berubah atau setelah loading selesai
+  useEffect(() => {
+    if (!loading && chartRef.current) {
+      // Wait a bit for DOM to be ready
+      const timer = setTimeout(() => {
+        try {
+          setupChart();
+        } catch (error) {
+          console.error("Error in chart useEffect:", error);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [chartData, loading]);
 
   async function fetchAll() {
     try {
@@ -57,7 +82,7 @@ function Dashboard() {
       if (!token) return;
 
       let successCount = 0;
-      const totalEndpoints = 3;
+      const totalEndpoints = 5; // Updated: kurir, products, warehouses, dashboard stats, analytics
 
       // Kurir
       try {
@@ -206,6 +231,68 @@ function Dashboard() {
         successCount++;
       }
 
+      // Dashboard Stats
+      try {
+        const resStats = await fetch(
+          "http://localhost:3000/api/dashboard/stats",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (resStats.ok) {
+          const jsonStats = await resStats.json();
+          if (jsonStats.success && jsonStats.data) {
+            const stats = jsonStats.data;
+            setDashboardStats({
+              total_deliveries: stats.total_deliveries || 0,
+              total_kurirs: kurirData.length,
+              total_products: productData.length,
+              total_warehouses: warehouseData.length,
+              active_deliveries: stats.status_distribution?.filter(
+                (s) => ['pending', 'picked_up', 'in_transit'].includes(s.status)
+              ).reduce((sum, s) => sum + (s.count || 0), 0) || 0,
+            });
+            
+            // Set recent deliveries
+            if (stats.recent_deliveries && Array.isArray(stats.recent_deliveries)) {
+              setRecentDeliveriesData(stats.recent_deliveries);
+            }
+            successCount++;
+          }
+        }
+      } catch (err) {
+        console.warn("Gagal fetch dashboard stats:", err);
+      }
+
+      // Dashboard Analytics untuk chart
+      try {
+        const resAnalytics = await fetch(
+          "http://localhost:3000/api/dashboard/analytics",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (resAnalytics.ok) {
+          const jsonAnalytics = await resAnalytics.json();
+          if (jsonAnalytics.success && jsonAnalytics.data?.daily_stats) {
+            setChartData(jsonAnalytics.data.daily_stats);
+            // Update chart setelah data tersedia
+            setTimeout(setupChart, 500);
+            successCount++;
+          }
+        }
+      } catch (err) {
+        console.warn("Gagal fetch dashboard analytics:", err);
+      }
+
       // Update backend status berdasarkan success rate
       if (successCount === totalEndpoints) {
         setBackendStatus("connected");
@@ -225,24 +312,55 @@ function Dashboard() {
       setWarehouseData(getDummyWarehouseData());
     } finally {
       setLoading(false);
+      // Setup chart setelah loading selesai
+      setTimeout(() => {
+        if (chartRef.current) {
+          setupChart();
+        }
+      }, 500);
     }
   }
 
   // Setup chart
   const setupChart = () => {
-    if (!chartRef.current) return;
+    if (!chartRef.current) {
+      console.warn("Chart ref not available");
+      return;
+    }
 
-    const ctx = chartRef.current.getContext("2d");
-    if (chartInstance.current) chartInstance.current.destroy();
+    try {
+      const ctx = chartRef.current.getContext("2d");
+      if (!ctx) {
+        console.warn("Cannot get canvas context");
+        return;
+      }
+      
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+      }
 
-    chartInstance.current = new Chart(ctx, {
+      // Gunakan data dari API jika ada, jika tidak gunakan dummy
+      let labels = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat"];
+      let data = [12, 19, 15, 25, 8];
+
+      if (chartData && Array.isArray(chartData) && chartData.length > 0) {
+        // Ambil 5 hari terakhir
+        const last5Days = chartData.slice(-5);
+        labels = last5Days.map((item) => {
+          const date = new Date(item.date);
+          return date.toLocaleDateString("id-ID", { weekday: "short" });
+        });
+        data = last5Days.map((item) => item.count || 0);
+      }
+
+      chartInstance.current = new Chart(ctx, {
       type: "bar",
       data: {
-        labels: ["Senin", "Selasa", "Rabu", "Kamis", "Jumat"],
+        labels: labels,
         datasets: [
           {
             label: "Pengiriman",
-            data: [12, 19, 15, 25, 8],
+            data: data,
             backgroundColor: "rgba(37, 99, 235, 0.8)",
             borderRadius: 10,
             barThickness: 40,
@@ -275,7 +393,10 @@ function Dashboard() {
         },
       },
     });
-  };
+  } catch (error) {
+    console.error("Error setting up chart:", error);
+  }
+};
 
   // Data dummy untuk fallback
   const getDummyKurirData = () => [
@@ -344,46 +465,15 @@ function Dashboard() {
     { id: 4, name: "Gudang Bandung", location: "Bandung", status: "active" },
   ];
 
-  // === STAT CARDS DENGAN DATA API ===
-  // PERBAIKAN: Count semua warehouse, tidak hanya yang aktif
-  const stats = [
-    {
-      title: "Total Kurir",
-      value: kurirData.length,
-      icon: <Users size={24} />,
-      change: "+12%",
-      bgColor: "bg-blue-500",
-      lightBg: "bg-blue-50",
-      textColor: "text-blue-600",
-    },
-    {
-      title: "Total Barang",
-      value: productData.length,
-      icon: <Package size={24} />,
-      change: "+8%",
-      bgColor: "bg-emerald-500",
-      lightBg: "bg-emerald-50",
-      textColor: "text-emerald-600",
-    },
-    {
-      title: "Total Gudang", // DIUBAH DARI "Gudang Aktif" KE "Total Gudang"
-      value: warehouseData.length, // DIUBAH: Semua warehouse, tidak difilter
-      icon: <Warehouse size={24} />,
-      change: "+2",
-      bgColor: "bg-purple-500",
-      lightBg: "bg-purple-50",
-      textColor: "text-purple-600",
-    },
-    {
-      title: "Pengiriman Aktif",
-      value: 69, // Static untuk sekarang
-      icon: <Send size={24} />,
-      change: "+23%",
-      bgColor: "bg-orange-500",
-      lightBg: "bg-orange-50",
-      textColor: "text-orange-600",
-    },
-  ];
+  // State untuk dashboard stats dari API
+  const [dashboardStats, setDashboardStats] = useState({
+    total_deliveries: 0,
+    total_kurirs: 0,
+    total_products: 0,
+    total_warehouses: 0,
+    active_deliveries: 0,
+  });
+  const [recentDeliveriesData, setRecentDeliveriesData] = useState([]);
 
   // Fungsi untuk menghitung gudang aktif (opsional, jika masih diperlukan)
   const getActiveWarehousesCount = () => {
@@ -393,60 +483,84 @@ function Dashboard() {
   };
 
   // === DATA TABEL ===
-  const recentDeliveries = [
-    {
-      id: "DLV-001",
-      barang: "Laptop Dell XPS 13",
-      tujuan: "Jakarta Pusat",
-      kurir: kurirData[0]?.name || "Budi Santoso",
-      status: "progress",
-    },
-    {
-      id: "DLV-002",
-      barang: "Smartphone Samsung S24",
-      tujuan: "Tangerang",
-      kurir: kurirData[1]?.name || "Andi Wijaya",
-      status: "progress",
-    },
-    {
-      id: "DLV-003",
-      barang: "Monitor LG 27 inch",
-      tujuan: "Bekasi",
-      kurir: kurirData[2]?.name || "Rudi Hartono",
-      status: "delivered",
-    },
-    {
-      id: "DLV-004",
-      barang: "Keyboard Mechanical",
-      tujuan: "Depok",
-      kurir: kurirData[3]?.name || "Siti Nurhaliza",
-      status: "progress",
-    },
-    {
-      id: "DLV-005",
-      barang: "Mouse Gaming Logitech",
-      tujuan: "Bogor",
-      kurir: kurirData[4]?.name || "Dewi Lestari",
-      status: "pending",
-    },
-  ];
+  // Gunakan data dari API jika ada, jika tidak gunakan dummy
+  const getRecentDeliveries = () => {
+    if (recentDeliveriesData.length > 0) {
+      return recentDeliveriesData.slice(0, 5).map((delivery) => ({
+        id: delivery.tracking_number || `DLV-${delivery.id}`,
+        barang: "Multiple Items", // Bisa diambil dari items jika ada
+        tujuan: `${delivery.delivery_city || ""}, ${delivery.delivery_province || ""}`.trim() || "Unknown",
+        kurir: delivery.kurir?.user?.full_name || "Unassigned",
+        status: delivery.status || "pending",
+      }));
+    }
+    
+    // Fallback dummy data
+    return [
+      {
+        id: "DLV-001",
+        barang: "Laptop Dell XPS 13",
+        tujuan: "Jakarta Pusat",
+        kurir: kurirData[0]?.name || "Budi Santoso",
+        status: "progress",
+      },
+      {
+        id: "DLV-002",
+        barang: "Smartphone Samsung S24",
+        tujuan: "Tangerang",
+        kurir: kurirData[1]?.name || "Andi Wijaya",
+        status: "progress",
+      },
+      {
+        id: "DLV-003",
+        barang: "Monitor LG 27 inch",
+        tujuan: "Bekasi",
+        kurir: kurirData[2]?.name || "Rudi Hartono",
+        status: "delivered",
+      },
+      {
+        id: "DLV-004",
+        barang: "Keyboard Mechanical",
+        tujuan: "Depok",
+        kurir: kurirData[3]?.name || "Siti Nurhaliza",
+        status: "progress",
+      },
+      {
+        id: "DLV-005",
+        barang: "Mouse Gaming Logitech",
+        tujuan: "Bogor",
+        kurir: kurirData[4]?.name || "Dewi Lestari",
+        status: "pending",
+      },
+    ];
+  };
+
+  const recentDeliveries = getRecentDeliveries();
 
   const getStatusBadge = (status) => {
     const styles = {
       progress: "bg-blue-100 text-blue-700 border-blue-200",
+      in_transit: "bg-blue-100 text-blue-700 border-blue-200",
+      picked_up: "bg-blue-100 text-blue-700 border-blue-200",
       delivered: "bg-emerald-100 text-emerald-700 border-emerald-200",
       pending: "bg-amber-100 text-amber-700 border-amber-200",
+      failed: "bg-red-100 text-red-700 border-red-200",
+      cancelled: "bg-red-100 text-red-700 border-red-200",
     };
     const labels = {
       progress: "Dalam Pengiriman",
+      in_transit: "Dalam Perjalanan",
+      picked_up: "Diambil",
       delivered: "Terkirim",
       pending: "Menunggu",
+      failed: "Gagal",
+      cancelled: "Dibatalkan",
     };
     return (
       <span
-        className={`px-3 py-1 text-xs font-medium rounded-full border ${styles[status]}`}
+        className={`px-3 py-1 text-xs font-medium rounded-full border ${styles[status] || styles.pending}`}
       >
-        {labels[status]}
+        {labels[status] || status}
       </span>
     );
   };
@@ -455,22 +569,20 @@ function Dashboard() {
     fetchAll();
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 p-6 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-slate-600">Memuat dashboard...</p>
-          <p className="text-slate-500 text-sm mt-2">
-            Menghubungkan ke server backend
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 p-6 space-y-6">
+    <div className="space-y-6">
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-slate-600">Memuat dashboard...</p>
+            <p className="text-slate-500 text-sm mt-2">
+              Menghubungkan ke server backend
+            </p>
+          </div>
+        </div>
+      )}
       {/* HEADER */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-8 shadow-xl">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -577,7 +689,44 @@ function Dashboard() {
 
       {/* STAT CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-        {stats.map((item, i) => (
+        {[
+          {
+            title: "Total Kurir",
+            value: dashboardStats.total_kurirs || kurirData.length,
+            icon: <Users size={24} />,
+            change: "+12%",
+            bgColor: "bg-blue-500",
+            lightBg: "bg-blue-50",
+            textColor: "text-blue-600",
+          },
+          {
+            title: "Total Barang",
+            value: dashboardStats.total_products || productData.length,
+            icon: <Package size={24} />,
+            change: "+8%",
+            bgColor: "bg-emerald-500",
+            lightBg: "bg-emerald-50",
+            textColor: "text-emerald-600",
+          },
+          {
+            title: "Total Gudang",
+            value: dashboardStats.total_warehouses || warehouseData.length,
+            icon: <Warehouse size={24} />,
+            change: "+2",
+            bgColor: "bg-purple-500",
+            lightBg: "bg-purple-50",
+            textColor: "text-purple-600",
+          },
+          {
+            title: "Pengiriman Aktif",
+            value: dashboardStats.active_deliveries || dashboardStats.total_deliveries || 0,
+            icon: <Send size={24} />,
+            change: "+23%",
+            bgColor: "bg-orange-500",
+            lightBg: "bg-orange-50",
+            textColor: "text-orange-600",
+          },
+        ].map((item, i) => (
           <div
             key={i}
             className="relative overflow-hidden bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
@@ -634,8 +783,14 @@ function Dashboard() {
           </div>
         </div>
         <div className="p-4 md:p-6">
-          <div style={{ height: "280px" }}>
-            <canvas ref={chartRef}></canvas>
+          <div style={{ height: "280px", position: "relative" }}>
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              </div>
+            ) : (
+              <canvas ref={chartRef}></canvas>
+            )}
           </div>
         </div>
       </div>

@@ -37,7 +37,10 @@ export default function DataBarang() {
     category_id: "",
     unit: "",
     status: "available",
+    image_url: "",
   });
+  const [imagePreview, setImagePreview] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Get token dengan validation
   const getToken = () => {
@@ -345,21 +348,26 @@ export default function DataBarang() {
     }
 
     try {
+      const payload = {
+        name: form.name.trim(),
+        sku: form.sku.trim(),
+        category_id: parseInt(form.category_id),
+        unit: form.unit || "pcs",
+        status: form.status,
+      };
+
+      // Include image_url if available
+      if (form.image_url) {
+        payload.image_url = form.image_url;
+      }
+
       const url = isEdit
         ? `http://localhost:3000/api/products/${form.id}`
         : `http://localhost:3000/api/products`;
 
       const method = isEdit ? "PUT" : "POST";
 
-      const bodyData = {
-        name: form.name.trim(),
-        sku: form.sku.trim(),
-        category_id: parseInt(form.category_id),
-        unit: form.unit.trim() || "pcs",
-        status: form.status,
-      };
-
-      console.log("Submitting data:", bodyData);
+      console.log("Submitting data:", payload);
 
       const response = await fetch(url, {
         method,
@@ -367,7 +375,7 @@ export default function DataBarang() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(bodyData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -742,8 +750,30 @@ export default function DataBarang() {
                             {barang.sku || "N/A"}
                           </span>
                         </td>
-                        <td className="p-4 font-medium text-slate-800">
-                          {barang.name || "N/A"}
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            {barang.image_url ? (
+                              <img
+                                src={
+                                  barang.image_url.startsWith("http")
+                                    ? barang.image_url
+                                    : `http://localhost:3000${barang.image_url}`
+                                }
+                                alt={barang.name}
+                                className="w-12 h-12 object-cover rounded border border-slate-200"
+                                onError={(e) => {
+                                  e.target.src = "https://via.placeholder.com/48?text=No+Image";
+                                }}
+                              />
+                            ) : (
+                              <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 flex items-center justify-center">
+                                <Package className="w-6 h-6 text-slate-400" />
+                              </div>
+                            )}
+                            <span className="font-medium text-slate-800">
+                              {barang.name || "N/A"}
+                            </span>
+                          </div>
                         </td>
                         <td className="p-4">
                           <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm">
@@ -907,6 +937,54 @@ export default function DataBarang() {
                     <option value="limited">Terbatas</option>
                     <option value="out">Habis</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Gambar Produk
+                  </label>
+                  <div className="space-y-3">
+                    {imagePreview && (
+                      <div className="relative">
+                        <img
+                          src={imagePreview}
+                          alt="Preview"
+                          className="w-full h-48 object-cover rounded-lg border border-slate-300"
+                          onError={(e) => {
+                            e.target.src = "https://via.placeholder.com/400?text=Image+Error";
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImagePreview("");
+                            setForm((prev) => ({ ...prev, image_url: "" }));
+                          }}
+                          className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                          disabled={submitting || uploadingImage}
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        disabled={submitting || uploadingImage}
+                      />
+                      {uploadingImage && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-lg">
+                          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Format: JPG, PNG, GIF, WebP. Maksimal 10MB
+                    </p>
+                  </div>
                 </div>
               </div>
 

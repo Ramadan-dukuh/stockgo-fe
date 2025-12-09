@@ -16,92 +16,196 @@ import Layout from "../components/layout";
 
 export default function Laporan() {
   const [jenisLaporan, setJenisLaporan] = useState("pengiriman");
-  const [tanggalAwal, setTanggalAwal] = useState("2025-01-01");
-  const [tanggalAkhir, setTanggalAkhir] = useState("2025-01-31");
+  const [tanggalAwal, setTanggalAwal] = useState(() => {
+    const date = new Date();
+    date.setDate(1); // First day of current month
+    return date.toISOString().split('T')[0];
+  });
+  const [tanggalAkhir, setTanggalAkhir] = useState(() => {
+    const date = new Date();
+    return date.toISOString().split('T')[0];
+  });
 
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [reportData, setReportData] = useState(null);
 
-  // Data laporan berdasarkan periode
-  const laporanData = {
-    periode: [
-      {
-        minggu: "Minggu 1 (1-7 Jan)",
-        total: 234,
-        selesai: 222,
-        proses: 9,
-        gagal: 3,
-        persentase: "94.9%",
-      },
-      {
-        minggu: "Minggu 2 (8-14 Jan)",
-        total: 245,
-        selesai: 233,
-        proses: 8,
-        gagal: 4,
-        persentase: "95.1%",
-      },
-      {
-        minggu: "Minggu 3 (15-21 Jan)",
-        total: 212,
-        selesai: 201,
-        proses: 6,
-        gagal: 5,
-        persentase: "94.8%",
-      },
-      {
-        minggu: "Minggu 4 (22-28 Jan)",
-        total: 256,
-        selesai: 245,
-        proses: 7,
-        gagal: 4,
-        persentase: "95.7%",
-      },
-      {
-        minggu: "Minggu 5 (29-31 Jan)",
-        total: 98,
-        selesai: 92,
-        proses: 4,
-        gagal: 2,
-        persentase: "93.9%",
-      },
-    ],
-    summary: {
-      totalPengiriman: 1045,
-      berhasilTerkirim: 993,
-      dalamProses: 34,
-      gagal: 18,
-      rataRataHarian: 34,
-    },
+  // Get token
+  const getToken = () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      window.location.href = "/login";
+      return null;
+    }
+    return token;
+  };
+
+  // Fetch report data
+  const fetchReport = async () => {
+    setLoading(true);
+    const token = getToken();
+    if (!token) return;
+
+    try {
+      let endpoint = "";
+      if (jenisLaporan === "pengiriman") {
+        endpoint = `/api/reports/delivery?start_date=${tanggalAwal}&end_date=${tanggalAkhir}`;
+      } else if (jenisLaporan === "kurir") {
+        endpoint = `/api/reports/kurir?start_date=${tanggalAwal}&end_date=${tanggalAkhir}`;
+      } else if (jenisLaporan === "barang" || jenisLaporan === "produk") {
+        endpoint = `/api/reports/product?start_date=${tanggalAwal}&end_date=${tanggalAkhir}`;
+      } else if (jenisLaporan === "gudang") {
+        endpoint = `/api/reports/warehouse?start_date=${tanggalAwal}&end_date=${tanggalAkhir}`;
+      }
+
+      console.log("Fetching report from:", `http://localhost:3000${endpoint}`);
+
+      const response = await fetch(`http://localhost:3000${endpoint}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      console.log("Report response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Report data received:", data);
+        if (data.success) {
+          console.log("Setting report data:", data.data);
+          setReportData(data.data);
+        } else {
+          console.error("Report API error:", data.message);
+          setReportData(null);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ message: response.statusText }));
+        console.error("Report fetch failed:", errorData.message || response.statusText);
+        setReportData(null);
+      }
+    } catch (error) {
+      console.error("Fetch report error:", error);
+      setReportData(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    const ctx = chartRef.current.getContext("2d");
+    fetchReport();
+  }, [jenisLaporan, tanggalAwal, tanggalAkhir]);
 
-    if (chartInstance.current) chartInstance.current.destroy();
+  // Process report data untuk chart
+  const getProcessedData = () => {
+    console.log("Processing report data, jenisLaporan:", jenisLaporan, "reportData:", reportData);
+    
+    if (!reportData) {
+      console.log("No report data, returning empty data");
+      return {
+        periode: [],
+        summary: {
+          totalPengiriman: 0,
+          berhasilTerkirim: 0,
+          dalamProses: 0,
+          gagal: 0,
+          rataRataHarian: 0,
+        },
+      };
+    }
+
+    if (jenisLaporan === "pengiriman") {
+      const summary = reportData.summary || {};
+      const periodData = reportData.period_data || [];
+
+      console.log("Processing pengiriman report - summary:", summary, "periodData:", periodData);
+
+      return {
+        periode: Array.isArray(periodData) ? periodData.map((p) => ({
+          minggu: p.period || "Periode",
+          total: p.total || 0,
+          selesai: p.successful || 0,
+          proses: p.in_progress || 0,
+          gagal: p.failed || 0,
+          persentase: p.success_rate || "0%",
+        })) : [],
+        summary: {
+          totalPengiriman: summary.total_deliveries || 0,
+          berhasilTerkirim: summary.successful_deliveries || 0,
+          dalamProses: summary.in_progress_deliveries || 0,
+          gagal: summary.failed_deliveries || 0,
+          rataRataHarian: summary.average_per_day || 0,
+        },
+      };
+    }
+
+    // Fallback untuk jenis laporan lain
+    console.log("Unknown report type, returning empty data");
+    return {
+      periode: [],
+      summary: {
+        totalPengiriman: 0,
+        berhasilTerkirim: 0,
+        dalamProses: 0,
+        gagal: 0,
+        rataRataHarian: 0,
+      },
+    };
+  };
+
+  const laporanData = getProcessedData();
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    const ctx = chartRef.current.getContext("2d");
+    if (!ctx) return;
+
+    if (chartInstance.current) {
+      chartInstance.current.destroy();
+    }
+
+    // Ensure we have valid data
+    const labels = laporanData.periode && laporanData.periode.length > 0
+      ? laporanData.periode.map((p) => {
+          const parts = p.minggu ? p.minggu.split(" ") : ["Periode"];
+          return parts.length >= 2 ? parts[0] + " " + parts[1] : parts[0];
+        })
+      : ["Tidak ada data"];
+
+    const selesaiData = laporanData.periode && laporanData.periode.length > 0
+      ? laporanData.periode.map((p) => p.selesai || 0)
+      : [0];
+
+    const prosesData = laporanData.periode && laporanData.periode.length > 0
+      ? laporanData.periode.map((p) => p.proses || 0)
+      : [0];
+
+    const gagalData = laporanData.periode && laporanData.periode.length > 0
+      ? laporanData.periode.map((p) => p.gagal || 0)
+      : [0];
 
     chartInstance.current = new Chart(ctx, {
       type: "bar",
       data: {
-        labels: laporanData.periode.map(
-          (p) => p.minggu.split(" ")[0] + " " + p.minggu.split(" ")[1]
-        ),
+        labels: labels,
         datasets: [
           {
             label: "Selesai",
-            data: laporanData.periode.map((p) => p.selesai),
+            data: selesaiData,
             backgroundColor: "rgba(16, 185, 129, 0.8)",
             borderRadius: 8,
           },
           {
             label: "Dalam Proses",
-            data: laporanData.periode.map((p) => p.proses),
+            data: prosesData,
             backgroundColor: "rgba(59, 130, 246, 0.8)",
             borderRadius: 8,
           },
           {
             label: "Gagal",
-            data: laporanData.periode.map((p) => p.gagal),
+            data: gagalData,
             backgroundColor: "rgba(239, 68, 68, 0.8)",
             borderRadius: 8,
           },
@@ -141,8 +245,12 @@ export default function Laporan() {
       },
     });
 
-    return () => chartInstance.current?.destroy();
-  }, []);
+    return () => {
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+      }
+    };
+  }, [laporanData]);
 
   const stats = [
     {
@@ -244,9 +352,13 @@ export default function Laporan() {
 
             {/* Button */}
             <div className="flex items-end">
-              <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg">
+              <button
+                onClick={fetchReport}
+                disabled={loading}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50"
+              >
                 <Filter className="w-4 h-4" />
-                Tampilkan Filter
+                {loading ? "Memuat..." : "Tampilkan Filter"}
               </button>
             </div>
           </div>
@@ -335,43 +447,53 @@ export default function Laporan() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {laporanData.periode.map((item, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-slate-50 transition-colors duration-150"
-                  >
-                    <td className="px-6 py-4">
-                      <span className="text-sm font-medium text-slate-800">
-                        {item.minggu}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-sm font-semibold text-slate-800">
-                        {item.total}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-sm font-semibold text-emerald-600">
-                        {item.selesai}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-sm font-semibold text-blue-600">
-                        {item.proses}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-sm font-semibold text-red-600">
-                        {item.gagal}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                        {item.persentase}
+                {laporanData.periode && laporanData.periode.length > 0 ? (
+                  laporanData.periode.map((item, index) => (
+                    <tr
+                      key={index}
+                      className="hover:bg-slate-50 transition-colors duration-150"
+                    >
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-medium text-slate-800">
+                          {item.minggu || "Periode"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-semibold text-slate-800">
+                          {item.total || 0}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-semibold text-emerald-600">
+                          {item.selesai || 0}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-semibold text-blue-600">
+                          {item.proses || 0}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-semibold text-red-600">
+                          {item.gagal || 0}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          {item.persentase || "0%"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center">
+                      <span className="text-slate-500 text-sm">
+                        {loading ? "Memuat data..." : "Tidak ada data untuk periode yang dipilih"}
                       </span>
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
               <tfoot>
                 <tr className="bg-blue-50 border-t-2 border-blue-200">

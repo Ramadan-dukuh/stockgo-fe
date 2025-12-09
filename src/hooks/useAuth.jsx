@@ -14,13 +14,18 @@ export function useAuth() {
     try {
       const token = localStorage.getItem("token");
       if (token) {
-        const decoded = jwtDecode(token);
-        setUser({
-          id: decoded.id,
-          email: decoded.email,
-          role: decoded.role,
-          name: decoded.full_name || "User",
-        });
+        try {
+          const decoded = jwtDecode(token);
+          setUser({
+            id: decoded.id,
+            email: decoded.email,
+            role: decoded.role,
+            name: decoded.full_name || decoded.name || "User",
+          });
+        } catch (decodeError) {
+          console.error("Token decode error:", decodeError);
+          localStorage.removeItem("token");
+        }
       }
     } catch (error) {
       console.error("Auth error:", error);

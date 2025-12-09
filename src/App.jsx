@@ -21,8 +21,11 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat...</p>
+        </div>
       </div>
     );
   }
@@ -32,10 +35,22 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/unauthorized" replace />;
   }
 
-  return <Layout>{children}</Layout>;
+  try {
+    return <Layout>{children}</Layout>;
+  } catch (error) {
+    console.error("Error rendering Layout:", error);
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50">
+        <div className="text-center">
+          <p className="text-red-600 font-semibold">Error loading page</p>
+          <p className="text-red-500 text-sm mt-2">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
 };
 
 export default function App() {

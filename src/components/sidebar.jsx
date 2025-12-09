@@ -8,7 +8,6 @@ import {
   FileText,
   PackageSearch,
   Users,
-  Settings,
   LogOut,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -18,6 +17,11 @@ function Sidebar({ open }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+
+  // Safety check
+  if (!user) {
+    return null;
+  }
 
   // Menu berdasarkan role
   const getMenuItems = () => {
@@ -75,12 +79,6 @@ function Sidebar({ open }) {
           label: "Laporan", 
           to: "/laporan",
           roles: ['admin', 'dispatcher']
-        },
-        { 
-          icon: <Settings size={20} />, 
-          label: "Pengaturan", 
-          to: "/settings",
-          roles: ['admin']
         },
       ];
     } else if (user?.role === 'dispatcher') {

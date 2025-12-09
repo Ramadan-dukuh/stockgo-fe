@@ -22,6 +22,7 @@ import {
   Calendar,
   Award,
   Package,
+  Loader2,
 } from "lucide-react";
 
 export default function DataKurir() {
@@ -29,7 +30,7 @@ export default function DataKurir() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [kurirData, setKurirData] = useState([]);
   const [page, setPage] = useState(1);
-  const [limit] = useState(10);
+  const [limit] = useState(100); // Increase limit to get all kurirs
   const [loading, setLoading] = useState(false);
   const [totalData, setTotalData] = useState(0);
 
@@ -44,18 +45,109 @@ export default function DataKurir() {
   const [detailData, setDetailData] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Create/Edit modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingKurir, setEditingKurir] = useState(null);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [kurirForm, setKurirForm] = useState({
+    user_id: "",
+    license_number: "",
+    vehicle_type: "",
+    vehicle_plate: "",
+    current_location: "",
+    max_capacity: "",
+  });
+
+  // Get token
+  const getToken = () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      window.location.href = "/login";
+      return null;
+    }
+    return token;
+  };
+
+  // Fetch available users
+  const fetchAvailableUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const token = getToken();
+      if (!token) return;
+
+      const res = await fetch(
+        "http://localhost:3000/api/kurir/available-users",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data?.users) {
+          setAvailableUsers(json.data.users);
+        }
+      }
+    } catch (err) {
+      console.error("Fetch available users error:", err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
   // Fetch data dari API
   const fetchKurirs = async () => {
     try {
       setLoading(true);
+      const token = getToken();
+      if (!token) return;
+
       const res = await fetch(
-        `http://localhost:3000/api/kurir?page=${page}&limit=${limit}`
+        `http://localhost:3000/api/kurir?page=${page}&limit=${limit}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
       );
+      
+      if (!res.ok) {
+        console.error("Failed to fetch kurirs:", res.status, res.statusText);
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Error data:", errorData);
+        setKurirData([]);
+        setTotalData(0);
+        return;
+      }
+
       const json = await res.json();
+      console.log("Kurir API response:", json);
 
       if (json.success) {
-        setKurirData(json.data.kurirs);
-        setTotalData(json.data.kurirs.length);
+        // Handle different response structures
+        let kurirs = [];
+        if (json.data?.kurirs && Array.isArray(json.data.kurirs)) {
+          kurirs = json.data.kurirs;
+        } else if (Array.isArray(json.data)) {
+          kurirs = json.data;
+        } else if (Array.isArray(json.kurirs)) {
+          kurirs = json.kurirs;
+        }
+        
+        console.log("Parsed kurirs:", kurirs);
+        setKurirData(kurirs);
+        setTotalData(kurirs.length);
+      } else {
+        console.error("Failed to fetch kurirs:", json.message);
+        setKurirData([]);
+        setTotalData(0);
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -68,7 +160,15 @@ export default function DataKurir() {
   const fetchKurirDetail = async (id) => {
     try {
       setLoadingDetail(true);
-      const res = await fetch(`http://localhost:3000/api/kurir/${id}`);
+      const token = getToken();
+      if (!token) return;
+
+      const res = await fetch(`http://localhost:3000/api/kurir/${id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
       const json = await res.json();
 
       if (json.success) {
@@ -82,16 +182,167 @@ export default function DataKurir() {
     }
   };
 
+  // Handle create kurir
+  const handleCreateKurir = async (e) => {
+    e.preventDefault();
+    if (!kurirForm.user_id) {
+      alert("Pilih user terlebih dahulu");
+      return;
+    }
+
+    const token = getToken();
+    if (!token) return;
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("http://localhost:3000/api/kurir", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(kurirForm),
+      });
+
+      if (response.ok) {
+        alert("Kurir berhasil ditambahkan");
+        setShowCreateModal(false);
+        setKurirForm({
+          user_id: "",
+          license_number: "",
+          vehicle_type: "",
+          vehicle_plate: "",
+          current_location: "",
+          max_capacity: "",
+        });
+        fetchKurirs();
+      } else {
+        const data = await response.json();
+        throw new Error(data.message || "Gagal menambah kurir");
+      }
+    } catch (error) {
+      console.error("Create kurir error:", error);
+      alert(`Gagal menambah kurir: ${error.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle edit kurir
+  const handleEditKurir = async (e) => {
+    e.preventDefault();
+    if (!editingKurir) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    setSubmitting(true);
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/kurir/${editingKurir.id}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(kurirForm),
+        }
+      );
+
+      if (response.ok) {
+        alert("Kurir berhasil diperbarui");
+        setShowEditModal(false);
+        setEditingKurir(null);
+        fetchKurirs();
+        if (detailData && detailData.id === editingKurir.id) {
+          fetchKurirDetail(editingKurir.id);
+        }
+      } else {
+        const data = await response.json();
+        throw new Error(data.message || "Gagal memperbarui kurir");
+      }
+    } catch (error) {
+      console.error("Update kurir error:", error);
+      alert(`Gagal memperbarui kurir: ${error.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle delete kurir
+  const handleDeleteKurir = async (id) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus kurir ini?")) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    try {
+      const response = await fetch(`http://localhost:3000/api/kurir/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        alert("Kurir berhasil dihapus");
+        fetchKurirs();
+        if (detailModalOpen && detailData?.id === id) {
+          setDetailModalOpen(false);
+        }
+      } else {
+        const data = await response.json();
+        throw new Error(data.message || "Gagal menghapus kurir");
+      }
+    } catch (error) {
+      console.error("Delete kurir error:", error);
+      alert(`Gagal menghapus kurir: ${error.message}`);
+    }
+  };
+
+  // Open create modal
+  const openCreateModal = () => {
+    fetchAvailableUsers();
+    setShowCreateModal(true);
+  };
+
+  // Open edit modal
+  const openEditModal = (kurir) => {
+    setEditingKurir(kurir);
+    setKurirForm({
+      user_id: kurir.user_id?.toString() || "",
+      license_number: kurir.license_number || "",
+      vehicle_type: kurir.vehicle_type || "",
+      vehicle_plate: kurir.vehicle_plate || "",
+      current_location: kurir.current_location || "",
+      max_capacity: kurir.max_capacity || "",
+    });
+    setShowEditModal(true);
+  };
+
   useEffect(() => {
     fetchKurirs();
   }, [page]);
 
+  // Debug: log kurirData when it changes
+  useEffect(() => {
+    console.log("Kurir data updated:", kurirData);
+  }, [kurirData]);
+
   // Edit Status
   const updateStatus = async (id, status) => {
     try {
+      const token = getToken();
+      if (!token) return;
+
       await fetch(`http://localhost:3000/api/kurir/${id}/status`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ status }),
       });
       fetchKurirs();
@@ -107,9 +358,15 @@ export default function DataKurir() {
   // Edit Rating
   const updateRating = async (id, rating) => {
     try {
+      const token = getToken();
+      if (!token) return;
+
       await fetch(`http://localhost:3000/api/kurir/${id}/performance`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ rating }),
       });
       fetchKurirs();
@@ -230,7 +487,10 @@ export default function DataKurir() {
               </p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-lg transition-all duration-200 font-semibold">
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-lg transition-all duration-200 font-semibold"
+          >
             <Plus className="w-4 h-4" />
             Tambah Kurir
           </button>
@@ -341,39 +601,61 @@ export default function DataKurir() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredData.map((k) => (
-                  <tr key={k.id} className="hover:bg-blue-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-sm text-slate-700 font-medium">
-                        {k.employee_id}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md">
-                          {k.user.full_name.charAt(0)}
-                        </div>
-                        <span className="font-semibold text-slate-800">
-                          {k.user.full_name}
-                        </span>
+                {filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                        <Users className="w-12 h-12 text-slate-300" />
+                        <p className="text-slate-600 font-medium">
+                          {kurirData.length === 0 
+                            ? "Belum ada data kurir" 
+                            : "Tidak ada kurir yang sesuai dengan filter"}
+                        </p>
+                        {kurirData.length === 0 && (
+                          <button
+                            onClick={openCreateModal}
+                            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                          >
+                            Tambah Kurir Pertama
+                          </button>
+                        )}
                       </div>
                     </td>
+                  </tr>
+                ) : (
+                  filteredData.map((k) => (
+                    <tr key={k.id} className="hover:bg-blue-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-sm text-slate-700 font-medium">
+                          {k.employee_id || "N/A"}
+                        </span>
+                      </td>
 
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                          <Phone className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{k.user.phone}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-600">
-                          <Mail className="w-3.5 h-3.5 text-slate-400" />
-                          <span className="truncate max-w-[200px]">
-                            {k.user.email}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md">
+                            {k.user?.full_name?.charAt(0) || "?"}
+                          </div>
+                          <span className="font-semibold text-slate-800">
+                            {k.user?.full_name || "N/A"}
                           </span>
                         </div>
-                      </div>
-                    </td>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm text-slate-600">
+                            <Phone className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{k.user?.phone || "-"}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-slate-600">
+                            <Mail className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="truncate max-w-[200px]">
+                              {k.user?.email || "-"}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
 
                     <td className="px-6 py-4">
                       <div className="text-sm">
@@ -413,13 +695,29 @@ export default function DataKurir() {
                         <button
                           onClick={() => fetchKurirDetail(k.id)}
                           className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
+                          title="Detail"
                         >
                           <Eye className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(k)}
+                          className="p-2 hover:bg-emerald-50 rounded-lg transition-colors group"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteKurir(k.id)}
+                          className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
+                          title="Hapus"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600 group-hover:scale-110 transition-transform" />
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           )}
@@ -777,6 +1075,333 @@ export default function DataKurir() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Kurir Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                  <Plus className="w-5 h-5" />
+                  Tambah Kurir Baru
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setKurirForm({
+                      user_id: "",
+                      license_number: "",
+                      vehicle_type: "",
+                      vehicle_plate: "",
+                      current_location: "",
+                      max_capacity: "",
+                    });
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-lg"
+                  disabled={submitting}
+                >
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateKurir} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Pilih User *
+                  </label>
+                  {loadingUsers ? (
+                    <div className="flex items-center gap-2 py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm text-slate-500">Memuat users...</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={kurirForm.user_id}
+                      onChange={(e) =>
+                        setKurirForm({ ...kurirForm, user_id: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">-- Pilih User --</option>
+                      {availableUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.full_name} - {user.email}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {availableUsers.length === 0 && !loadingUsers && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Semua user sudah memiliki profil kurir. Buat user baru terlebih dahulu.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Nomor Lisensi
+                  </label>
+                  <input
+                    type="text"
+                    value={kurirForm.license_number}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, license_number: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: SIM-A-123456"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Tipe Kendaraan *
+                  </label>
+                  <select
+                    value={kurirForm.vehicle_type}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, vehicle_type: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">-- Pilih Tipe Kendaraan --</option>
+                    <option value="Motor">Motor</option>
+                    <option value="Mobil">Mobil</option>
+                    <option value="Truk">Truk</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Plat Nomor
+                  </label>
+                  <input
+                    type="text"
+                    value={kurirForm.vehicle_plate}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, vehicle_plate: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: B 1234 XYZ"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Lokasi Saat Ini
+                  </label>
+                  <input
+                    type="text"
+                    value={kurirForm.current_location}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, current_location: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: Jakarta Pusat"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Kapasitas Maksimal (kg)
+                  </label>
+                  <input
+                    type="number"
+                    value={kurirForm.max_capacity}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, max_capacity: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: 50"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setKurirForm({
+                        user_id: "",
+                        license_number: "",
+                        vehicle_type: "",
+                        vehicle_plate: "",
+                        current_location: "",
+                        max_capacity: "",
+                      });
+                    }}
+                    className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                    disabled={submitting}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !kurirForm.user_id || !kurirForm.vehicle_type}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Menyimpan...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Tambah Kurir
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Kurir Modal */}
+      {showEditModal && editingKurir && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                  <Edit2 className="w-5 h-5" />
+                  Edit Kurir
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingKurir(null);
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-lg"
+                  disabled={submitting}
+                >
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditKurir} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Nomor Lisensi
+                  </label>
+                  <input
+                    type="text"
+                    value={kurirForm.license_number}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, license_number: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: SIM-A-123456"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Tipe Kendaraan *
+                  </label>
+                  <select
+                    value={kurirForm.vehicle_type}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, vehicle_type: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">-- Pilih Tipe Kendaraan --</option>
+                    <option value="Motor">Motor</option>
+                    <option value="Mobil">Mobil</option>
+                    <option value="Truk">Truk</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Plat Nomor
+                  </label>
+                  <input
+                    type="text"
+                    value={kurirForm.vehicle_plate}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, vehicle_plate: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: B 1234 XYZ"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Lokasi Saat Ini
+                  </label>
+                  <input
+                    type="text"
+                    value={kurirForm.current_location}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, current_location: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: Jakarta Pusat"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Kapasitas Maksimal (kg)
+                  </label>
+                  <input
+                    type="number"
+                    value={kurirForm.max_capacity}
+                    onChange={(e) =>
+                      setKurirForm({ ...kurirForm, max_capacity: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contoh: 50"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingKurir(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                    disabled={submitting}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !kurirForm.vehicle_type}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Memperbarui...
+                      </>
+                    ) : (
+                      <>
+                        <Edit2 className="w-4 h-4" />
+                        Perbarui Kurir
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

@@ -943,6 +943,9 @@ export default function DataPengiriman() {
     if (!token) return;
 
     try {
+      // Fetch customers and products terlebih dahulu
+      await Promise.all([fetchCustomers(), fetchProducts()]);
+      
       const response = await fetch(
         `http://localhost:3000/api/deliveries/${delivery.id}`,
         {
@@ -959,6 +962,22 @@ export default function DataPengiriman() {
           const deliveryData = data.data.delivery || data.data;
           const items = data.data.items || [];
           
+          // Pastikan product_id di-set dengan benar
+          const mappedItems = items.length > 0 
+            ? items.map((item) => {
+                // Cek apakah product_id ada, jika tidak coba dari product object
+                const productId = item.product_id 
+                  ? item.product_id.toString() 
+                  : (item.product?.id ? item.product.id.toString() : "");
+                
+                return {
+                  product_id: productId,
+                  quantity: item.quantity || 1,
+                  notes: item.notes || "",
+                };
+              })
+            : [{ product_id: "", quantity: 1, notes: "" }];
+          
           setEditDelivery({
             customer_id: deliveryData.customer_id?.toString() || "",
             warehouse_id: deliveryData.warehouse_id || 1,
@@ -968,18 +987,9 @@ export default function DataPengiriman() {
             delivery_province: deliveryData.delivery_province || "",
             delivery_postal_code: deliveryData.delivery_postal_code || "",
             notes: deliveryData.notes || "",
-            items: items.length > 0 
-              ? items.map((item) => ({
-                  product_id: item.product_id?.toString() || "",
-                  quantity: item.quantity || 1,
-                  notes: item.notes || "",
-                }))
-              : [{ product_id: "", quantity: 1, notes: "" }],
+            items: mappedItems,
           });
           
-          // Fetch customers and products untuk dropdown
-          fetchCustomers();
-          fetchProducts();
           setShowEditModal(true);
         }
       }

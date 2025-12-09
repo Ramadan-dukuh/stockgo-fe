@@ -64,12 +64,12 @@ function Sidebar({ open }) {
           to: "/ekspedisi",
           roles: ['admin', 'dispatcher']
         },
-        { 
-          icon: <Users size={20} />, 
-          label: "Pengguna", 
-          to: "/users",
-          roles: ['admin']
-        },
+        // { 
+        //   icon: <Users size={20} />, 
+        //   label: "Pengguna", 
+        //   to: "/users",
+        //   roles: ['admin']
+        // },
         { 
           icon: <FileText size={20} />, 
           label: "Laporan", 
@@ -155,7 +155,9 @@ function Sidebar({ open }) {
         <div className="flex items-center gap-2">
           {open ? (
             <div>
-              <div className="text-2xl font-bold">Stockgo</div>
+              <div className=" font-bold">
+                <img src="/StockGo_Logo_White.png" alt="" className="w-50 h-auto"/>
+              </div>
               <div className="text-xs opacity-80 mt-1">
                 {user?.name} • {user?.role}
               </div>

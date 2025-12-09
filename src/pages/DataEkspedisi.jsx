@@ -50,7 +50,6 @@ export default function DataEkspedisi() {
   const [selectedExpedition, setSelectedExpedition] = useState(null);
   const [expeditionItems, setExpeditionItems] = useState({});
   const [loadingItems, setLoadingItems] = useState({});
-  const [userRole, setUserRole] = useState("");
 
   // Form state untuk create expedition
   const [expeditionForm, setExpeditionForm] = useState({
@@ -75,39 +74,25 @@ export default function DataEkspedisi() {
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [notifications, setNotifications] = useState([]);
 
-  // Fungsi untuk mendapatkan token dan user info
+  // Fungsi untuk mendapatkan token
   const getToken = () => {
     const token = localStorage.getItem("token");
     if (!token) {
       window.location.href = "/login";
       return null;
     }
-
-    // Decode token untuk mendapatkan role
-    try {
-      const base64Url = token.split(".")[1];
-      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split("")
-          .map((c) => {
-            return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
-          })
-          .join("")
-      );
-      const decoded = JSON.parse(jsonPayload);
-      setUserRole(decoded.role || "");
-      return token;
-    } catch (e) {
-      console.error("Error decoding token:", e);
-      return token;
-    }
+    return token;
   };
 
-  // Check if user can create/update (admin or dispatcher)
-  const canManageExpeditions = () => {
-    return userRole === "admin" || userRole === "dispatcher";
+  // Fungsi untuk menampilkan notifikasi
+  const showNotification = (message, type = "info") => {
+    const id = Date.now();
+    setNotifications((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    }, 5000);
   };
 
   // Fetch data dari API
@@ -123,18 +108,14 @@ export default function DataEkspedisi() {
       setLoading(true);
       setError(null);
       const token = getToken();
-
       if (!token) return;
 
-      const res = await fetch(
-        "http://localhost:3000/api/expeditions?page=1&limit=50",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const res = await fetch("http://localhost:3000/api/expeditions?page=1&limit=50", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (res.status === 401) {
         localStorage.removeItem("token");
@@ -143,35 +124,28 @@ export default function DataEkspedisi() {
       }
 
       if (!res.ok) {
-        throw new Error(`Error ${res.status}: Gagal mengambil data ekspedisi`);
+        throw new Error("Tidak dapat terhubung ke server ekspedisi");
       }
 
       const data = await res.json();
       console.log("Expeditions API Response:", data);
 
-      if (data.success) {
-        const expeditions = data.data?.expeditions || data.data || [];
-        const normalizedData = expeditions.map((item) => ({
+      if (data.success && data.data?.expeditions) {
+        const normalizedData = data.data.expeditions.map((item) => ({
           id: item.id,
-          expedition_code:
-            item.expedition_code ||
-            `EXP${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+          expedition_code: item.expedition_code,
           warehouse_id: item.warehouse_id,
-          warehouse: item.warehouse,
+          warehouse: item.warehouse || {},
           warehouse_name: item.warehouse?.name || "Gudang Tidak Diketahui",
-          warehouse_location: `${item.warehouse?.city || ""}, ${
-            item.warehouse?.province || ""
-          }`,
+          warehouse_location: `${item.warehouse?.city || ""}, ${item.warehouse?.province || ""}`,
           kurir_id: item.kurir_id,
-          kurir: item.kurir,
-          kurir_name: item.kurir?.user?.name || "Belum ditugaskan",
-          kurir_vehicle: `${item.kurir?.vehicle_type || ""} ${
-            item.kurir?.vehicle_plate || ""
-          }`,
-          kurir_rating: item.kurir?.rating || 0,
+          kurir: item.kurir || {},
+          kurir_name: item.kurir?.user?.full_name || item.kurir?.user?.name || "Belum ditugaskan",
+          kurir_vehicle: `${item.kurir?.vehicle_type || ""} ${item.kurir?.vehicle_plate || ""}`,
+          kurir_rating: parseFloat(item.kurir?.rating) || 0,
           kurir_status: item.kurir?.status || "unknown",
           notes: item.notes,
-          status: item.status || "pending",
+          status: item.status,
           status_label: getStatusLabel(item.status),
           departure_date: item.departure_date,
           arrival_date: item.arrival_date,
@@ -180,8 +154,7 @@ export default function DataEkspedisi() {
           total_value: item.total_value || "0",
           created_by: item.created_by,
           creator: item.creator,
-          creator_name:
-            item.creator?.full_name || item.creator?.name || "System",
+          creator_name: item.creator?.full_name || item.creator?.name || "System",
           created_at: item.created_at,
           updated_at: item.updated_at,
           // Format tanggal untuk display
@@ -211,12 +184,12 @@ export default function DataEkspedisi() {
         });
       } else {
         setEkspedisiData([]);
-        setError(data.message || "Gagal mengambil data ekspedisi");
+        showNotification("Data ekspedisi kosong", "warning");
       }
     } catch (err) {
       console.error("Fetch expeditions error:", err);
       setError(err.message || "Terjadi kesalahan saat mengambil data");
-      setEkspedisiData(getDummyData());
+      showNotification("Gagal mengambil data ekspedisi", "error");
     } finally {
       setLoading(false);
     }
@@ -236,12 +209,15 @@ export default function DataEkspedisi() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
-          setWarehouses(data.data?.warehouses || data.data || []);
+        if (data.success && data.data?.warehouses) {
+          setWarehouses(data.data.warehouses);
         }
+      } else {
+        showNotification("Gagal mengambil data gudang", "error");
       }
     } catch (err) {
       console.error("Fetch warehouses error:", err);
+      showNotification("Error mengambil data gudang", "error");
     }
   };
 
@@ -250,7 +226,7 @@ export default function DataEkspedisi() {
       const token = getToken();
       if (!token) return;
 
-      const res = await fetch("http://localhost:3000/api/kurirs", {
+      const res = await fetch("http://localhost:3000/api/kurir", {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -259,59 +235,62 @@ export default function DataEkspedisi() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
+        if (data.success && data.data?.kurirs) {
           // Filter hanya kurir yang available atau active
-          const activeKurirs = (data.data?.kurirs || data.data || []).filter(
+          const activeKurirs = data.data.kurirs.filter(
             (kurir) => kurir.status === "available" || kurir.status === "active"
           );
           setKurirs(activeKurirs);
         }
+      } else {
+        showNotification("Gagal mengambil data kurir", "error");
       }
     } catch (err) {
       console.error("Fetch kurirs error:", err);
+      showNotification("Error mengambil data kurir", "error");
     }
   };
 
-  const fetchAvailableDeliveries = async () => {
-    try {
-      const token = getToken();
-      if (!token) return;
+ const fetchAvailableDeliveries = async () => {
+   try {
+     const token = getToken();
+     if (!token) return;
+     console.log("Fetching available deliveries...");
 
-      // Fetch deliveries dengan status assigned/pending yang belum masuk ekspedisi
-      const res = await fetch(
-        "http://localhost:3000/api/deliveries?limit=100",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+     const res = await fetch(
+       "http://localhost:3000/api/deliveries?status=pending&limit=100",
+       {
+         headers: {
+           Authorization: `Bearer ${token}`,
+           "Content-Type": "application/json",
+         },
+       }
+     );
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          // Filter deliveries yang belum masuk ekspedisi dan statusnya pending/assigned
-          const availableDeliveries = (
-            data.data?.deliveries ||
-            data.data ||
-            []
-          ).filter((delivery) => {
-            const deliveryData = delivery.delivery || delivery;
-            return (
-              !deliveryData.expedition_id &&
-              (deliveryData.status === "pending" ||
-                deliveryData.status === "assigned" ||
-                deliveryData.status === "processing")
-            );
-          });
-          setDeliveries(availableDeliveries);
-        }
-      }
-    } catch (err) {
-      console.error("Fetch available deliveries error:", err);
-    }
-  };
+     const data = await res.json();
+     console.log("Raw API Response:", data);
+
+     if (data.success && data.data?.deliveries) {
+       console.log("All deliveries:", data.data.deliveries);
+
+       // FIX: Akses delivery yang nested
+       const availableDeliveries = data.data.deliveries.filter((item) => {
+         const deliveryData = item.delivery; // Ambil delivery dari nested object
+         return (
+           deliveryData &&
+           !deliveryData.expedition_id &&
+           deliveryData.status === "pending"
+         );
+       });
+
+       console.log("Filtered available deliveries:", availableDeliveries);
+       setDeliveries(availableDeliveries);
+     }
+   } catch (err) {
+     console.error("Fetch available deliveries error:", err);
+     showNotification("Error mengambil data pengiriman", "error");
+   }
+ };
 
   const fetchExpeditionItems = async (expeditionId) => {
     try {
@@ -319,16 +298,12 @@ export default function DataEkspedisi() {
       const token = getToken();
       if (!token) return;
 
-      // Endpoint untuk mengambil items dari ekspedisi
-      const res = await fetch(
-        `http://localhost:3000/api/expeditions/${expeditionId}/items`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const res = await fetch(`http://localhost:3000/api/expeditions/${expeditionId}/items`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (res.ok) {
         const data = await res.json();
@@ -337,31 +312,6 @@ export default function DataEkspedisi() {
             ...prev,
             [expeditionId]: data.data.items,
           }));
-        }
-      } else {
-        // Fallback: coba endpoint alternatif
-        try {
-          const res2 = await fetch(
-            `http://localhost:3000/api/expeditions/${expeditionId}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-
-          if (res2.ok) {
-            const data2 = await res2.json();
-            if (data2.success && data2.data?.expedition?.items) {
-              setExpeditionItems((prev) => ({
-                ...prev,
-                [expeditionId]: data2.data.expedition.items,
-              }));
-            }
-          }
-        } catch (err2) {
-          console.error("Fetch expedition items fallback error:", err2);
         }
       }
     } catch (err) {
@@ -379,6 +329,8 @@ export default function DataEkspedisi() {
       shipped: "Dikirim",
       delivered: "Selesai",
       cancelled: "Dibatalkan",
+      draft: "Draft",
+      completed: "Selesai",
     };
     return labels[status] || status;
   };
@@ -389,7 +341,9 @@ export default function DataEkspedisi() {
       processing: "bg-blue-100 text-blue-700 border-blue-200",
       shipped: "bg-blue-100 text-blue-700 border-blue-200",
       delivered: "bg-emerald-100 text-emerald-700 border-emerald-200",
+      completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
       cancelled: "bg-red-100 text-red-700 border-red-200",
+      draft: "bg-gray-100 text-gray-700 border-gray-200",
     };
 
     return (
@@ -401,66 +355,6 @@ export default function DataEkspedisi() {
         {getStatusLabel(status)}
       </span>
     );
-  };
-
-  const getKurirStatusBadge = (status) => {
-    const styles = {
-      available: "bg-emerald-100 text-emerald-700 border-emerald-200",
-      active: "bg-blue-100 text-blue-700 border-blue-200",
-      busy: "bg-amber-100 text-amber-700 border-amber-200",
-      offline: "bg-red-100 text-red-700 border-red-200",
-    };
-
-    const labels = {
-      available: "Tersedia",
-      active: "Aktif",
-      busy: "Sibuk",
-      offline: "Offline",
-    };
-
-    return (
-      <span
-        className={`px-2 py-0.5 text-xs font-medium rounded-full border ${
-          styles[status] || "bg-gray-100 text-gray-700 border-gray-200"
-        }`}
-      >
-        {labels[status] || status}
-      </span>
-    );
-  };
-
-  // Data dummy fallback
-  const getDummyData = () => {
-    return [
-      {
-        id: 1,
-        expedition_code: "EXP-20241208-001",
-        warehouse_name: "Gudang Pusat Jakarta",
-        kurir_name: "Budi Santoso",
-        status: "processing",
-        status_label: "Diproses",
-        total_packages: 5,
-        total_weight: "25.5",
-        total_value: "15000000",
-        tanggal_dibuat: "08/12/2024",
-        waktu_dibuat: "10:30",
-        notes: "Ekspedisi ke wilayah Jakarta Pusat",
-      },
-      {
-        id: 2,
-        expedition_code: "EXP-20241208-002",
-        warehouse_name: "Gudang Tangerang",
-        kurir_name: "Andi Wijaya",
-        status: "shipped",
-        status_label: "Dikirim",
-        total_packages: 3,
-        total_weight: "15.2",
-        total_value: "8500000",
-        tanggal_dibuat: "08/12/2024",
-        waktu_dibuat: "11:45",
-        notes: "Ekspedisi ke Tangerang dan sekitarnya",
-      },
-    ];
   };
 
   const toggleRowExpand = (id) => {
@@ -482,14 +376,13 @@ export default function DataEkspedisi() {
       warehouse_id: expedition.warehouse_id || "",
       kurir_id: expedition.kurir_id || "",
       departure_date: expedition.departure_date
-        ? new Date(expedition.departure_date).toISOString().split("T")[0]
+        ? expedition.departure_date.split("T")[0]
         : "",
       arrival_date: expedition.arrival_date
-        ? new Date(expedition.arrival_date).toISOString().split("T")[0]
+        ? expedition.arrival_date.split("T")[0]
         : "",
       notes: expedition.notes || "",
-      delivery_ids:
-        expeditionItems[expedition.id]?.map((item) => item.delivery_id) || [],
+      delivery_ids: expeditionItems[expedition.id]?.map((item) => item.delivery_id) || [],
     });
     setShowEditModal(true);
   };
@@ -497,13 +390,14 @@ export default function DataEkspedisi() {
   const handleCreateExpedition = async (e) => {
     e.preventDefault();
 
+    // Validasi wajib
     if (!expeditionForm.warehouse_id) {
-      alert("Pilih gudang terlebih dahulu");
+      showNotification("Pilih gudang terlebih dahulu", "error");
       return;
     }
 
     if (expeditionForm.delivery_ids.length === 0) {
-      alert("Pilih minimal 1 pengiriman");
+      showNotification("Pilih minimal 1 pengiriman", "error");
       return;
     }
 
@@ -513,29 +407,29 @@ export default function DataEkspedisi() {
     setCreating(true);
 
     try {
-      // Format dates
-      const formattedData = {
+      const requestData = {
         warehouse_id: parseInt(expeditionForm.warehouse_id),
-        kurir_id: expeditionForm.kurir_id
-          ? parseInt(expeditionForm.kurir_id)
-          : null,
-        notes: expeditionForm.notes || null,
-        delivery_ids: expeditionForm.delivery_ids.map((id) => parseInt(id)),
+        delivery_ids: expeditionForm.delivery_ids.map(id => parseInt(id)),
       };
 
-      // Add dates if provided
-      if (expeditionForm.departure_date) {
-        formattedData.departure_date = new Date(
-          expeditionForm.departure_date
-        ).toISOString();
-      }
-      if (expeditionForm.arrival_date) {
-        formattedData.arrival_date = new Date(
-          expeditionForm.arrival_date
-        ).toISOString();
+      // Tambahkan optional fields jika ada
+      if (expeditionForm.kurir_id) {
+        requestData.kurir_id = parseInt(expeditionForm.kurir_id);
       }
 
-      console.log("Creating expedition with data:", formattedData);
+      if (expeditionForm.notes) {
+        requestData.notes = expeditionForm.notes;
+      }
+
+      if (expeditionForm.departure_date) {
+        requestData.departure_date = new Date(expeditionForm.departure_date).toISOString();
+      }
+
+      if (expeditionForm.arrival_date) {
+        requestData.arrival_date = new Date(expeditionForm.arrival_date).toISOString();
+      }
+
+      console.log("Creating expedition with data:", requestData);
 
       const response = await fetch("http://localhost:3000/api/expeditions", {
         method: "POST",
@@ -543,12 +437,15 @@ export default function DataEkspedisi() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formattedData),
+        body: JSON.stringify(requestData),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        alert("Ekspedisi berhasil dibuat!");
+      const responseData = await response.json();
+
+      console.log("API Response:", responseData);
+
+      if (response.ok && responseData.success) {
+        showNotification("Ekspedisi berhasil dibuat!", "success");
         setShowCreateModal(false);
         setExpeditionForm({
           warehouse_id: "",
@@ -559,14 +456,15 @@ export default function DataEkspedisi() {
           delivery_ids: [],
         });
         fetchExpeditions();
-        fetchAvailableDeliveries(); // Refresh available deliveries
+        fetchAvailableDeliveries();
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Gagal membuat ekspedisi");
+        throw new Error(
+          responseData.message || `Gagal membuat ekspedisi (Status: ${response.status})`
+        );
       }
     } catch (error) {
       console.error("Create expedition error:", error);
-      alert(`Gagal membuat ekspedisi: ${error.message}`);
+      showNotification(`Gagal membuat ekspedisi: ${error.message}`, "error");
     } finally {
       setCreating(false);
     }
@@ -583,30 +481,39 @@ export default function DataEkspedisi() {
     setUpdating(true);
 
     try {
-      // Format dates
-      const formattedData = {
-        warehouse_id: parseInt(editForm.warehouse_id),
-        kurir_id: editForm.kurir_id ? parseInt(editForm.kurir_id) : null,
-        notes: editForm.notes || null,
-      };
+      const requestData = {};
 
-      // Add dates if provided
+      // Warehouse ID (wajib)
+      if (editForm.warehouse_id) {
+        requestData.warehouse_id = parseInt(editForm.warehouse_id);
+      }
+
+      // Kurir ID (opsional)
+      if (editForm.kurir_id) {
+        requestData.kurir_id = parseInt(editForm.kurir_id);
+      } else {
+        requestData.kurir_id = null;
+      }
+
+      // Notes
+      if (editForm.notes !== undefined) {
+        requestData.notes = editForm.notes || null;
+      }
+
+      // Dates
       if (editForm.departure_date) {
-        formattedData.departure_date = new Date(
-          editForm.departure_date
-        ).toISOString();
+        requestData.departure_date = new Date(editForm.departure_date).toISOString();
       } else {
-        formattedData.departure_date = null;
-      }
-      if (editForm.arrival_date) {
-        formattedData.arrival_date = new Date(
-          editForm.arrival_date
-        ).toISOString();
-      } else {
-        formattedData.arrival_date = null;
+        requestData.departure_date = null;
       }
 
-      console.log("Updating expedition with data:", formattedData);
+      if (editForm.arrival_date) {
+        requestData.arrival_date = new Date(editForm.arrival_date).toISOString();
+      } else {
+        requestData.arrival_date = null;
+      }
+
+      console.log("Updating expedition with data:", requestData);
 
       const response = await fetch(
         `http://localhost:3000/api/expeditions/${selectedExpedition.id}`,
@@ -616,22 +523,26 @@ export default function DataEkspedisi() {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formattedData),
+          body: JSON.stringify(requestData),
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        alert("Ekspedisi berhasil diperbarui!");
+      const responseData = await response.json();
+
+      console.log("Update API Response:", responseData);
+
+      if (response.ok && responseData.success) {
+        showNotification("Ekspedisi berhasil diperbarui!", "success");
         setShowEditModal(false);
         fetchExpeditions();
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Gagal memperbarui ekspedisi");
+        throw new Error(
+          responseData.message || `Gagal memperbarui ekspedisi (Status: ${response.status})`
+        );
       }
     } catch (error) {
       console.error("Update expedition error:", error);
-      alert(`Gagal memperbarui ekspedisi: ${error.message}`);
+      showNotification(`Gagal memperbarui ekspedisi: ${error.message}`, "error");
     } finally {
       setUpdating(false);
     }
@@ -657,16 +568,19 @@ export default function DataEkspedisi() {
         }
       );
 
-      if (response.ok) {
-        alert("Status berhasil diperbarui");
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showNotification("Status berhasil diperbarui", "success");
         fetchExpeditions();
       } else {
-        const data = await response.json();
-        throw new Error(data.message || "Gagal memperbarui status");
+        throw new Error(
+          data.message || data.error || "Gagal memperbarui status"
+        );
       }
     } catch (error) {
       console.error("Update status error:", error);
-      alert(`Gagal memperbarui status: ${error.message}`);
+      showNotification(`Gagal memperbarui status: ${error.message}`, "error");
     }
   };
 
@@ -689,17 +603,20 @@ export default function DataEkspedisi() {
         }
       );
 
-      if (response.ok) {
-        alert("Ekspedisi berhasil dihapus");
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showNotification("Ekspedisi berhasil dihapus", "success");
         fetchExpeditions();
-        fetchAvailableDeliveries(); // Refresh available deliveries
+        fetchAvailableDeliveries();
       } else {
-        const data = await response.json();
-        throw new Error(data.message || "Gagal menghapus ekspedisi");
+        throw new Error(
+          data.message || data.error || "Gagal menghapus ekspedisi"
+        );
       }
     } catch (error) {
       console.error("Delete expedition error:", error);
-      alert(`Gagal menghapus ekspedisi: ${error.message}`);
+      showNotification(`Gagal menghapus ekspedisi: ${error.message}`, "error");
     } finally {
       setDeleting(false);
     }
@@ -722,24 +639,7 @@ export default function DataEkspedisi() {
     });
   };
 
-  // Toggle delivery selection for edit form
-  const toggleEditDeliverySelection = (deliveryId) => {
-    setEditForm((prev) => {
-      if (prev.delivery_ids.includes(deliveryId)) {
-        return {
-          ...prev,
-          delivery_ids: prev.delivery_ids.filter((id) => id !== deliveryId),
-        };
-      } else {
-        return {
-          ...prev,
-          delivery_ids: [...prev.delivery_ids, deliveryId],
-        };
-      }
-    });
-  };
-
-  // Add delivery item to expedition (for edit form)
+  // Add delivery item to expedition
   const handleAddDeliveryToExpedition = async (deliveryId) => {
     if (!selectedExpedition) return;
 
@@ -759,17 +659,26 @@ export default function DataEkspedisi() {
         }
       );
 
-      if (response.ok) {
-        alert("Pengiriman berhasil ditambahkan ke ekspedisi");
+      const responseData = await response.json();
+
+      if (response.ok && responseData.success) {
+        showNotification(
+          "Pengiriman berhasil ditambahkan ke ekspedisi",
+          "success"
+        );
         fetchExpeditionItems(selectedExpedition.id);
-        fetchAvailableDeliveries(); // Refresh available deliveries
+        fetchAvailableDeliveries();
       } else {
-        const data = await response.json();
-        throw new Error(data.message || "Gagal menambahkan pengiriman");
+        throw new Error(
+          responseData.message || "Gagal menambahkan pengiriman"
+        );
       }
     } catch (error) {
       console.error("Add delivery to expedition error:", error);
-      alert(`Gagal menambahkan pengiriman: ${error.message}`);
+      showNotification(
+        `Gagal menambahkan pengiriman: ${error.message}`,
+        "error"
+      );
     }
   };
 
@@ -798,17 +707,23 @@ export default function DataEkspedisi() {
         }
       );
 
-      if (response.ok) {
-        alert("Pengiriman berhasil dihapus dari ekspedisi");
+      const responseData = await response.json();
+
+      if (response.ok && responseData.success) {
+        showNotification(
+          "Pengiriman berhasil dihapus dari ekspedisi",
+          "success"
+        );
         fetchExpeditionItems(selectedExpedition.id);
-        fetchAvailableDeliveries(); // Refresh available deliveries
+        fetchAvailableDeliveries();
       } else {
-        const data = await response.json();
-        throw new Error(data.message || "Gagal menghapus pengiriman");
+        throw new Error(
+          responseData.message || "Gagal menghapus pengiriman"
+        );
       }
     } catch (error) {
       console.error("Remove delivery from expedition error:", error);
-      alert(`Gagal menghapus pengiriman: ${error.message}`);
+      showNotification(`Gagal menghapus pengiriman: ${error.message}`, "error");
     }
   };
 
@@ -846,7 +761,9 @@ export default function DataEkspedisi() {
     },
     {
       label: "Selesai",
-      value: ekspedisiData.filter((p) => p.status === "delivered").length,
+      value: ekspedisiData.filter(
+        (p) => p.status === "delivered" || p.status === "completed"
+      ).length,
       icon: <CheckCircle size={20} />,
       color: "emerald",
       trend: "Hari ini",
@@ -867,6 +784,36 @@ export default function DataEkspedisi() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+      {/* Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`p-4 rounded-lg shadow-lg border flex items-center gap-3 ${
+              notification.type === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : notification.type === "error"
+                ? "bg-red-50 border-red-200 text-red-800"
+                : notification.type === "warning"
+                ? "bg-amber-50 border-amber-200 text-amber-800"
+                : "bg-blue-50 border-blue-200 text-blue-800"
+            }`}
+          >
+            {notification.type === "success" && (
+              <CheckCircle className="w-5 h-5" />
+            )}
+            {notification.type === "error" && <XCircle className="w-5 h-5" />}
+            {notification.type === "warning" && (
+              <AlertTriangle className="w-5 h-5" />
+            )}
+            {notification.type === "info" && (
+              <AlertCircle className="w-5 h-5" />
+            )}
+            <span>{notification.message}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Header Section */}
       <div className="mb-8">
         <div className="flex items-center justify-between gap-3 mb-2">
@@ -878,26 +825,6 @@ export default function DataEkspedisi() {
               <h1 className="text-3xl font-bold text-slate-800">
                 Data Ekspedisi
               </h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-slate-600">Role:</span>
-                <span
-                  className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
-                    userRole === "admin"
-                      ? "bg-red-100 text-red-700"
-                      : userRole === "dispatcher"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  {userRole === "admin"
-                    ? "Administrator"
-                    : userRole === "dispatcher"
-                    ? "Dispatcher"
-                    : userRole === "kurir"
-                    ? "Kurir"
-                    : userRole || "User"}
-                </span>
-              </div>
             </div>
           </div>
           <button
@@ -930,8 +857,8 @@ export default function DataEkspedisi() {
             className="bg-white rounded-xl shadow-md p-5 hover:shadow-lg transition-shadow duration-200"
           >
             <div className="flex items-center justify-between mb-3">
-              <div className={`p-3 bg-${stat.color}-50 rounded-lg`}>
-                <span className={`text-${stat.color}-600`}>{stat.icon}</span>
+              <div className={`p-3 bg-blue-50 rounded-lg`}>
+                <span className={`text-blue-600`}>{stat.icon}</span>
               </div>
               <span className="text-xs font-semibold text-emerald-600">
                 {stat.trend}
@@ -966,6 +893,7 @@ export default function DataEkspedisi() {
                   <option value="processing">Diproses</option>
                   <option value="shipped">Dikirim</option>
                   <option value="delivered">Selesai</option>
+                  <option value="completed">Selesai</option>
                   <option value="cancelled">Dibatalkan</option>
                 </select>
               </div>
@@ -991,26 +919,25 @@ export default function DataEkspedisi() {
                   <Download className="w-4 h-4" />
                   <span className="hidden sm:inline">Export</span>
                 </button>
-                {canManageExpeditions() && (
-                  <button
-                    onClick={() => {
-                      setExpeditionForm({
-                        warehouse_id: "",
-                        kurir_id: "",
-                        departure_date: "",
-                        arrival_date: "",
-                        notes: "",
-                        delivery_ids: [],
-                      });
-                      setShowCreateModal(true);
-                    }}
-                    className="bg-white text-blue-700 px-5 py-2 rounded-lg font-medium hover:bg-blue-50 transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
-                  >
-                    <Plus className="w-5 h-5" />
-                    <span className="hidden sm:inline">Buat Ekspedisi</span>
-                    <span className="sm:hidden">Buat</span>
-                  </button>
-                )}
+                {/* Tombol Buat Ekspedisi - TAMPILKAN SELALU */}
+                <button
+                  onClick={() => {
+                    setExpeditionForm({
+                      warehouse_id: "",
+                      kurir_id: "",
+                      departure_date: "",
+                      arrival_date: "",
+                      notes: "",
+                      delivery_ids: [],
+                    });
+                    setShowCreateModal(true);
+                  }}
+                  className="bg-white text-blue-700 px-5 py-2 rounded-lg font-medium hover:bg-blue-50 transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span className="hidden sm:inline">Buat Ekspedisi</span>
+                  <span className="sm:hidden">Buat</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1031,15 +958,13 @@ export default function DataEkspedisi() {
                   ? "Tidak ada ekspedisi yang sesuai dengan filter"
                   : "Belum ada data ekspedisi"}
               </p>
-              {canManageExpeditions() && (
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                >
-                  <Plus className="w-4 h-4 inline mr-2" />
-                  Buat Ekspedisi Pertama
-                </button>
-              )}
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4 inline mr-2" />
+                Buat Ekspedisi Pertama
+              </button>
             </div>
           ) : (
             <table className="w-full">
@@ -1158,28 +1083,26 @@ export default function DataEkspedisi() {
                             <Eye className="w-4 h-4 group-hover:scale-110 transition-transform" />
                           </button>
 
-                          {/* Edit Button - Only for admin/dispatcher */}
-                          {canManageExpeditions() && (
+                          {/* Edit Button - TAMPILKAN SELALU */}
+                          <button
+                            onClick={() => handleEditClick(item)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200 group"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                          </button>
+
+                          {/* Delete Button - Untuk status pending/draft */}
+                          {(item.status === "pending" ||
+                            item.status === "draft") && (
                             <button
-                              onClick={() => handleEditClick(item)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200 group"
-                              title="Edit"
+                              onClick={() => handleDeleteExpedition(item.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 group"
+                              title="Hapus"
                             >
-                              <Edit2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                              <Trash2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
                             </button>
                           )}
-
-                          {/* Delete Button - Only for admin and for pending status */}
-                          {userRole === "admin" &&
-                            item.status === "pending" && (
-                              <button
-                                onClick={() => handleDeleteExpedition(item.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 group"
-                                title="Hapus"
-                              >
-                                <Trash2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                              </button>
-                            )}
                         </div>
                       </td>
                     </tr>
@@ -1272,14 +1195,12 @@ export default function DataEkspedisi() {
                                       Tandai Selesai
                                     </button>
                                   )}
-                                  {canManageExpeditions() && (
-                                    <button
-                                      onClick={() => handleEditClick(item)}
-                                      className="w-full px-3 py-1 border border-blue-300 text-blue-600 rounded text-sm hover:bg-blue-50"
-                                    >
-                                      Edit Ekspedisi
-                                    </button>
-                                  )}
+                                  <button
+                                    onClick={() => handleEditClick(item)}
+                                    className="w-full px-3 py-1 border border-blue-300 text-blue-600 rounded text-sm hover:bg-blue-50"
+                                  >
+                                    Edit Ekspedisi
+                                  </button>
                                 </div>
                               </div>
 
@@ -1305,27 +1226,26 @@ export default function DataEkspedisi() {
                                             <p className="text-sm font-medium">
                                               {deliveryItem.delivery
                                                 ?.tracking_number ||
-                                                deliveryItem.tracking_number ||
                                                 `Delivery ${idx + 1}`}
                                             </p>
                                             <p className="text-xs text-slate-500">
                                               ID: {deliveryItem.delivery_id}
                                             </p>
                                           </div>
-                                          {canManageExpeditions() &&
-                                            item.status === "pending" && (
-                                              <button
-                                                onClick={() =>
-                                                  handleRemoveDeliveryFromExpedition(
-                                                    deliveryItem.id
-                                                  )
-                                                }
-                                                className="text-red-600 hover:text-red-800 text-xs"
-                                                title="Hapus dari ekspedisi"
-                                              >
-                                                <X size={12} />
-                                              </button>
-                                            )}
+                                          {(item.status === "pending" ||
+                                            item.status === "draft") && (
+                                            <button
+                                              onClick={() =>
+                                                handleRemoveDeliveryFromExpedition(
+                                                  deliveryItem.id
+                                                )
+                                              }
+                                              className="text-red-600 hover:text-red-800 text-xs"
+                                              title="Hapus dari ekspedisi"
+                                            >
+                                              <X size={12} />
+                                            </button>
+                                          )}
                                         </div>
                                       )
                                     )
@@ -1418,7 +1338,10 @@ export default function DataEkspedisi() {
                       >
                         <option value="">Pilih Gudang</option>
                         {warehouses.map((warehouse) => (
-                          <option key={warehouse.id} value={warehouse.id}>
+                          <option
+                            key={warehouse.id}
+                            value={warehouse.id}
+                          >
                             {warehouse.name} - {warehouse.city},{" "}
                             {warehouse.province}
                           </option>
@@ -1442,9 +1365,13 @@ export default function DataEkspedisi() {
                       >
                         <option value="">Pilih Kurir</option>
                         {kurirs.map((kurir) => (
-                          <option key={kurir.id} value={kurir.id}>
-                            {kurir.user?.name || kurir.full_name} -{" "}
-                            {kurir.vehicle_type} ({kurir.status})
+                          <option
+                            key={kurir.id}
+                            value={kurir.id}
+                          >
+                            {kurir.user?.full_name || kurir.user?.name}{" "}
+                            - {kurir.vehicle_type || "No Vehicle"} (
+                            {kurir.status || "unknown"})
                           </option>
                         ))}
                       </select>
@@ -1522,10 +1449,9 @@ export default function DataEkspedisi() {
                           type="button"
                           onClick={() => {
                             // Select all deliveries
-                            const allDeliveryIds = deliveries.map((d) => {
-                              const deliveryData = d.delivery || d;
-                              return deliveryData.id;
-                            });
+                            const allDeliveryIds = deliveries
+                              .map((d) => d.id)
+                              .filter((id) => id);
                             setExpeditionForm((prev) => ({
                               ...prev,
                               delivery_ids: allDeliveryIds,
@@ -1563,19 +1489,22 @@ export default function DataEkspedisi() {
                       ) : (
                         <div className="divide-y divide-slate-200">
                           {deliveries.map((delivery) => {
-                            const deliveryData = delivery.delivery || delivery;
+                            const deliveryId = delivery.id;
+
+                            if (!deliveryId) return null;
+
                             return (
                               <div
-                                key={deliveryData.id}
+                                key={deliveryId}
                                 className={`p-3 hover:bg-slate-50 cursor-pointer transition-colors ${
                                   expeditionForm.delivery_ids.includes(
-                                    deliveryData.id
+                                    deliveryId
                                   )
                                     ? "bg-blue-50 border-l-4 border-blue-500"
                                     : ""
                                 }`}
                                 onClick={() =>
-                                  toggleDeliverySelection(deliveryData.id)
+                                  toggleDeliverySelection(deliveryId)
                                 }
                               >
                                 <div className="flex items-center justify-between">
@@ -1583,52 +1512,52 @@ export default function DataEkspedisi() {
                                     <div
                                       className={`w-6 h-6 rounded-full border flex items-center justify-center ${
                                         expeditionForm.delivery_ids.includes(
-                                          deliveryData.id
+                                          deliveryId
                                         )
                                           ? "bg-blue-500 border-blue-500 text-white"
                                           : "border-slate-300"
                                       }`}
                                     >
                                       {expeditionForm.delivery_ids.includes(
-                                        deliveryData.id
+                                        deliveryId
                                       )
                                         ? "✓"
                                         : ""}
                                     </div>
                                     <div>
                                       <p className="font-medium text-slate-800">
-                                        {deliveryData.tracking_number}
+                                        {delivery.tracking_number ||
+                                          `Delivery-${deliveryId}`}
                                       </p>
                                       <p className="text-sm text-slate-600">
                                         {delivery.customer?.name ||
-                                          deliveryData.customer?.name}
+                                          "Unknown Customer"}
                                       </p>
                                       <p className="text-xs text-slate-500">
-                                        {deliveryData.delivery_address}
+                                        {delivery.delivery_address ||
+                                          "No address"}
                                       </p>
                                     </div>
                                   </div>
                                   <div className="text-right">
                                     <p className="text-sm font-medium text-slate-700">
-                                      {deliveryData.total_weight
+                                      {delivery.total_weight
                                         ? `${parseFloat(
-                                            deliveryData.total_weight
+                                            delivery.total_weight
                                           ).toFixed(2)} kg`
                                         : "0 kg"}
                                     </p>
                                     <p className="text-xs text-slate-500">
-                                      {formatCurrency(deliveryData.total_value)}
+                                      {formatCurrency(delivery.total_value)}
                                     </p>
                                     <span
                                       className={`text-xs px-2 py-0.5 rounded-full ${
-                                        deliveryData.status === "pending"
+                                        delivery.status === "pending"
                                           ? "bg-amber-100 text-amber-700"
-                                          : deliveryData.status === "assigned"
-                                          ? "bg-blue-100 text-blue-700"
                                           : "bg-slate-100 text-slate-700"
                                       }`}
                                     >
-                                      {getStatusLabel(deliveryData.status)}
+                                      {getStatusLabel(delivery.status)}
                                     </span>
                                   </div>
                                 </div>
@@ -1658,16 +1587,10 @@ export default function DataEkspedisi() {
                           <p className="font-medium text-lg">
                             {deliveries
                               .filter((d) =>
-                                expeditionForm.delivery_ids.includes(
-                                  (d.delivery || d).id
-                                )
+                                expeditionForm.delivery_ids.includes(d.id)
                               )
                               .reduce(
-                                (sum, d) =>
-                                  sum +
-                                  parseFloat(
-                                    (d.delivery || d).total_weight || 0
-                                  ),
+                                (sum, d) => sum + parseFloat(d.total_weight || 0),
                                 0
                               )
                               .toFixed(2)}{" "}
@@ -1680,16 +1603,10 @@ export default function DataEkspedisi() {
                             {formatCurrency(
                               deliveries
                                 .filter((d) =>
-                                  expeditionForm.delivery_ids.includes(
-                                    (d.delivery || d).id
-                                  )
+                                  expeditionForm.delivery_ids.includes(d.id)
                                 )
                                 .reduce(
-                                  (sum, d) =>
-                                    sum +
-                                    parseFloat(
-                                      (d.delivery || d).total_value || 0
-                                    ),
+                                  (sum, d) => sum + parseFloat(d.total_value || 0),
                                   0
                                 )
                             )}
@@ -1728,15 +1645,6 @@ export default function DataEkspedisi() {
                         </>
                       )}
                     </button>
-                  </div>
-
-                  {/* Info Message */}
-                  <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                    <p className="text-xs text-amber-700">
-                      <strong>Note:</strong> Hanya admin dan dispatcher yang
-                      dapat membuat ekspedisi. Pastikan memilih minimal 1
-                      pengiriman dengan status pending/assigned.
-                    </p>
                   </div>
                 </div>
               </form>
@@ -1784,7 +1692,10 @@ export default function DataEkspedisi() {
                       >
                         <option value="">Pilih Gudang</option>
                         {warehouses.map((warehouse) => (
-                          <option key={warehouse.id} value={warehouse.id}>
+                          <option
+                            key={warehouse.id}
+                            value={warehouse.id}
+                          >
                             {warehouse.name} - {warehouse.city},{" "}
                             {warehouse.province}
                           </option>
@@ -1808,9 +1719,13 @@ export default function DataEkspedisi() {
                       >
                         <option value="">Pilih Kurir</option>
                         {kurirs.map((kurir) => (
-                          <option key={kurir.id} value={kurir.id}>
-                            {kurir.user?.name || kurir.full_name} -{" "}
-                            {kurir.vehicle_type} ({kurir.status})
+                          <option
+                            key={kurir.id}
+                            value={kurir.id}
+                          >
+                            {kurir.user?.full_name || kurir.user?.name}{" "}
+                            - {kurir.vehicle_type || "No Vehicle"} (
+                            {kurir.status || "unknown"})
                           </option>
                         ))}
                       </select>
@@ -1895,7 +1810,6 @@ export default function DataEkspedisi() {
                                   <div>
                                     <p className="font-medium text-slate-800">
                                       {item.delivery?.tracking_number ||
-                                        item.tracking_number ||
                                         `Delivery ${idx + 1}`}
                                     </p>
                                     <p className="text-sm text-slate-600">
@@ -1907,8 +1821,9 @@ export default function DataEkspedisi() {
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {selectedExpedition.status ===
-                                      "pending" && (
+                                    {(selectedExpedition.status === "pending" ||
+                                      selectedExpedition.status ===
+                                        "draft") && (
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -1938,7 +1853,8 @@ export default function DataEkspedisi() {
                   </div>
 
                   {/* Available Deliveries to Add */}
-                  {selectedExpedition.status === "pending" && (
+                  {(selectedExpedition.status === "pending" ||
+                    selectedExpedition.status === "draft") && (
                     <div>
                       <div className="flex items-center justify-between mb-4">
                         <label className="block text-sm font-medium text-slate-700">
@@ -1958,25 +1874,23 @@ export default function DataEkspedisi() {
                         ) : (
                           <div className="divide-y divide-slate-200">
                             {deliveries.map((delivery) => {
-                              const deliveryData =
-                                delivery.delivery || delivery;
+                              const deliveryId = delivery.id;
+
                               // Check if delivery is already in expedition
                               const isInExpedition = expeditionItems[
                                 selectedExpedition.id
                               ]?.some(
-                                (item) => item.delivery_id === deliveryData.id
+                                (item) => item.delivery_id === deliveryId
                               );
 
-                              if (isInExpedition) return null;
+                              if (isInExpedition || !deliveryId) return null;
 
                               return (
                                 <div
-                                  key={deliveryData.id}
+                                  key={deliveryId}
                                   className="p-3 hover:bg-slate-50 cursor-pointer transition-colors"
                                   onClick={() =>
-                                    handleAddDeliveryToExpedition(
-                                      deliveryData.id
-                                    )
+                                    handleAddDeliveryToExpedition(deliveryId)
                                   }
                                 >
                                   <div className="flex items-center justify-between">
@@ -1989,29 +1903,29 @@ export default function DataEkspedisi() {
                                       </div>
                                       <div>
                                         <p className="font-medium text-slate-800">
-                                          {deliveryData.tracking_number}
+                                          {delivery.tracking_number ||
+                                            `Delivery-${deliveryId}`}
                                         </p>
                                         <p className="text-sm text-slate-600">
                                           {delivery.customer?.name ||
-                                            deliveryData.customer?.name}
+                                            "Unknown"}
                                         </p>
                                         <p className="text-xs text-slate-500">
-                                          {deliveryData.delivery_address}
+                                          {delivery.delivery_address ||
+                                            "No address"}
                                         </p>
                                       </div>
                                     </div>
                                     <div className="text-right">
                                       <p className="text-sm font-medium text-slate-700">
-                                        {deliveryData.total_weight
+                                        {delivery.total_weight
                                           ? `${parseFloat(
-                                              deliveryData.total_weight
+                                              delivery.total_weight
                                             ).toFixed(2)} kg`
                                           : "0 kg"}
                                       </p>
                                       <p className="text-xs text-slate-500">
-                                        {formatCurrency(
-                                          deliveryData.total_value
-                                        )}
+                                        {formatCurrency(delivery.total_value)}
                                       </p>
                                     </div>
                                   </div>
@@ -2053,378 +1967,38 @@ export default function DataEkspedisi() {
                     </button>
                   </div>
 
-                  {/* Warning for non-pending status */}
-                  {selectedExpedition.status !== "pending" && (
-                    <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                      <p className="text-xs text-amber-700">
-                        <strong>Note:</strong> Ekspedisi dengan status "
-                        {getStatusLabel(selectedExpedition.status)}" hanya dapat
-                        mengubah informasi dasar. Pengiriman tidak dapat
-                        ditambah/dihapus.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Delete Button for Admin */}
-                  {userRole === "admin" &&
-                    selectedExpedition.status === "pending" && (
-                      <div className="border-t pt-4">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDeleteExpedition(selectedExpedition.id)
-                          }
-                          disabled={deleting}
-                          className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {deleting ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              Menghapus...
-                            </>
-                          ) : (
-                            <>
-                              <Trash2 className="w-4 h-4" />
-                              Hapus Ekspedisi
-                            </>
-                          )}
-                        </button>
-                        <p className="text-xs text-red-600 mt-2 text-center">
-                          Hati-hati: Aksi ini akan menghapus ekspedisi secara
-                          permanen
-                        </p>
-                      </div>
-                    )}
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      {showDetailModal && selectedExpedition && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-slate-800">
-                  Detail Ekspedisi
-                </h2>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="p-2 hover:bg-slate-100 rounded-lg"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Header Info */}
-                <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm text-blue-600 font-medium">
-                        Kode Ekspedisi
-                      </p>
-                      <p className="text-2xl font-bold text-blue-800">
-                        {selectedExpedition.expedition_code}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-sm text-slate-600">Status:</span>
-                        {getStatusBadge(selectedExpedition.status)}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-slate-600">Dibuat pada</p>
-                      <p className="font-medium">
-                        {selectedExpedition.tanggal_dibuat}{" "}
-                        {selectedExpedition.waktu_dibuat}
-                      </p>
-                      <p className="text-sm text-slate-500">
-                        Oleh: {selectedExpedition.creator_name}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expedition Details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Warehouse Info */}
-                  <div className="bg-slate-50 p-4 rounded-lg">
-                    <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                      <Building size={18} /> Informasi Gudang
-                    </h3>
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-sm text-slate-600">Nama Gudang</p>
-                        <p className="font-medium">
-                          {selectedExpedition.warehouse_name}
-                        </p>
-                      </div>
-                      {selectedExpedition.warehouse_location && (
-                        <div>
-                          <p className="text-sm text-slate-600">Lokasi</p>
-                          <p className="font-medium">
-                            {selectedExpedition.warehouse_location}
-                          </p>
-                        </div>
-                      )}
-                      {selectedExpedition.warehouse?.address && (
-                        <div>
-                          <p className="text-sm text-slate-600">Alamat</p>
-                          <p className="font-medium text-sm">
-                            {selectedExpedition.warehouse.address}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Kurir Info */}
-                  <div className="bg-slate-50 p-4 rounded-lg">
-                    <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                      <User size={18} /> Informasi Kurir
-                    </h3>
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-sm text-slate-600">Nama Kurir</p>
-                        <p className="font-medium">
-                          {selectedExpedition.kurir_name}
-                        </p>
-                      </div>
-                      {selectedExpedition.kurir_vehicle && (
-                        <div>
-                          <p className="text-sm text-slate-600">Kendaraan</p>
-                          <p className="font-medium">
-                            {selectedExpedition.kurir_vehicle}
-                          </p>
-                        </div>
-                      )}
-                      {selectedExpedition.kurir_rating > 0 && (
-                        <div>
-                          <p className="text-sm text-slate-600">Rating</p>
-                          <div className="flex items-center">
-                            <div className="flex text-amber-400">
-                              {[...Array(5)].map((_, i) => (
-                                <span key={i}>
-                                  {i <
-                                  Math.floor(selectedExpedition.kurir_rating)
-                                    ? "★"
-                                    : "☆"}
-                                </span>
-                              ))}
-                            </div>
-                            <span className="ml-2 text-slate-700">
-                              {selectedExpedition.kurir_rating.toFixed(1)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                      {selectedExpedition.kurir_status && (
-                        <div>
-                          <p className="text-sm text-slate-600">Status Kurir</p>
-                          <p>
-                            {getKurirStatusBadge(
-                              selectedExpedition.kurir_status
-                            )}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Dates Info */}
-                  <div className="bg-slate-50 p-4 rounded-lg">
-                    <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                      <Calendar size={18} /> Jadwal
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-slate-600">
-                          Tanggal Berangkat
-                        </p>
-                        <p className="font-medium">
-                          {selectedExpedition.tanggal_berangkat}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-600">Tanggal Tiba</p>
-                        <p className="font-medium">
-                          {selectedExpedition.tanggal_tiba}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Summary Info */}
-                  <div className="bg-slate-50 p-4 rounded-lg">
-                    <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                      <Package size={18} /> Ringkasan
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-slate-600">Total Paket</p>
-                        <p className="text-2xl font-bold text-blue-600">
-                          {selectedExpedition.total_packages}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-600">Total Berat</p>
-                        <p className="text-lg font-medium">
-                          {selectedExpedition.total_weight} kg
-                        </p>
-                      </div>
-                      <div className="col-span-2">
-                        <p className="text-sm text-slate-600">Total Nilai</p>
-                        <p className="text-lg font-medium">
-                          {formatCurrency(selectedExpedition.total_value)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                {selectedExpedition.notes && (
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                    <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                      <FileText size={18} /> Catatan Khusus
-                    </h3>
-                    <div className="p-3 bg-white rounded border">
-                      <p className="text-slate-700">
-                        {selectedExpedition.notes}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Delivery Items */}
-                <div className="bg-slate-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-slate-800">
-                      Daftar Pengiriman (
-                      {expeditionItems[selectedExpedition.id]?.length || 0})
-                    </h3>
-                    {loadingItems[selectedExpedition.id] && (
-                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {expeditionItems[selectedExpedition.id]?.length > 0 ? (
-                      expeditionItems[selectedExpedition.id].map(
-                        (item, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-white p-3 rounded-lg border border-slate-200"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium">
-                                  {item.delivery?.tracking_number ||
-                                    item.tracking_number ||
-                                    `Delivery ${idx + 1}`}
-                                </p>
-                                <p className="text-sm text-slate-600">
-                                  {item.delivery?.customer?.name || "Unknown"}
-                                </p>
-                                <div className="flex gap-4 mt-1 text-xs text-slate-500">
-                                  <span>
-                                    Berat:{" "}
-                                    {item.delivery?.total_weight
-                                      ? `${parseFloat(
-                                          item.delivery.total_weight
-                                        ).toFixed(2)} kg`
-                                      : "0 kg"}
-                                  </span>
-                                  <span>
-                                    Nilai:{" "}
-                                    {formatCurrency(item.delivery?.total_value)}
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                onClick={() =>
-                                  (window.location.href = `/pengiriman/detail/${item.delivery_id}`)
-                                }
-                                className="text-blue-600 hover:text-blue-700 text-sm"
-                              >
-                                Lihat Detail →
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      )
-                    ) : (
-                      <div className="text-center py-4">
-                        <Package className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="text-slate-500">
-                          Belum ada data pengiriman
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-wrap gap-3 pt-6 border-t">
-                  {canManageExpeditions() && (
-                    <button
-                      onClick={() => {
-                        setShowDetailModal(false);
-                        setTimeout(
-                          () => handleEditClick(selectedExpedition),
-                          100
-                        );
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      Edit Ekspedisi
-                    </button>
-                  )}
-                  {selectedExpedition.status === "pending" && (
-                    <button
-                      onClick={() =>
-                        handleUpdateStatus(selectedExpedition.id, "processing")
-                      }
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      Tandai Diproses
-                    </button>
-                  )}
-                  {selectedExpedition.status === "processing" && (
-                    <button
-                      onClick={() =>
-                        handleUpdateStatus(selectedExpedition.id, "shipped")
-                      }
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      Tandai Dikirim
-                    </button>
-                  )}
-                  {selectedExpedition.status === "shipped" && (
-                    <button
-                      onClick={() =>
-                        handleUpdateStatus(selectedExpedition.id, "delivered")
-                      }
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-                    >
-                      Tandai Selesai
-                    </button>
-                  )}
-                  {userRole === "admin" &&
-                    selectedExpedition.status === "pending" && (
+                  {/* Delete Button */}
+                  {(selectedExpedition.status === "pending" ||
+                    selectedExpedition.status === "draft") && (
+                    <div className="border-t pt-4">
                       <button
+                        type="button"
                         onClick={() =>
                           handleDeleteExpedition(selectedExpedition.id)
                         }
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                        disabled={deleting}
+                        className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        Hapus Ekspedisi
+                        {deleting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Menghapus...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            Hapus Ekspedisi
+                          </>
+                        )}
                       </button>
-                    )}
+                      <p className="text-xs text-red-600 mt-2 text-center">
+                        Hati-hati: Aksi ini akan menghapus ekspedisi secara
+                        permanen
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </form>
             </div>
           </div>
         </div>

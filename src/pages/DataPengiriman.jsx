@@ -45,6 +45,9 @@ export default function DataPengiriman() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingDelivery, setEditingDelivery] = useState(null);
+  const [updatingDelivery, setUpdatingDelivery] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [expandedRows, setExpandedRows] = useState({});
   const [deliveryItems, setDeliveryItems] = useState({});
@@ -67,11 +70,24 @@ export default function DataPengiriman() {
     notes: "",
     total_weight: "",
     total_value: "",
-    items: [{ name: "", quantity: 1, unit_price: "", weight: 1, notes: "" }],
+    items: [{ product_id: "", quantity: 1, notes: "" }],
   });
   const [customers, setCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [addingDelivery, setAddingDelivery] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [editDelivery, setEditDelivery] = useState({
+    customer_id: "",
+    warehouse_id: 1,
+    pickup_address: "Gudang Utama",
+    delivery_address: "",
+    delivery_city: "",
+    delivery_province: "",
+    delivery_postal_code: "",
+    notes: "",
+    items: [{ product_id: "", quantity: 1, notes: "" }],
+  });
 
   // Fungsi untuk mendapatkan token dan user info
   const getToken = () => {
@@ -254,7 +270,8 @@ export default function DataPengiriman() {
       const token = getToken();
       if (!token) return;
 
-      const res = await fetch("http://localhost:3000/api/kurirs", {
+      // Gunakan endpoint yang benar: /api/kurir
+      const res = await fetch("http://localhost:3000/api/kurir?page=1&limit=100", {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -266,15 +283,13 @@ export default function DataPengiriman() {
         if (data.success && data.data?.kurirs) {
           const stats = {
             total: data.data.kurirs.length,
-            active: data.data.kurirs.filter((k) => k.kurir?.status === "active")
-              .length,
+            active: data.data.kurirs.filter((k) => k.status === "available" || k.status === "busy").length,
             available: data.data.kurirs.filter(
-              (k) => k.kurir?.status === "available"
+              (k) => k.status === "available"
             ).length,
-            busy: data.data.kurirs.filter((k) => k.kurir?.status === "busy")
-              .length,
+            busy: data.data.kurirs.filter((k) => k.status === "busy").length,
             offline: data.data.kurirs.filter(
-              (k) => k.kurir?.status === "offline"
+              (k) => k.status === "offline"
             ).length,
           };
           setKurirStats(stats);
@@ -349,16 +364,16 @@ export default function DataPengiriman() {
     }
   };
 
-  // Fetch available kurirs dari endpoint /api/kurirs
+  // Fetch available kurirs dari endpoint /api/kurir
   const fetchAvailableKurirs = async () => {
     try {
       setLoadingKurirs(true);
       const token = getToken();
       if (!token) return;
 
-      // Gunakan endpoint berdasarkan struktur data kurir
+      // Gunakan endpoint yang benar: /api/kurir (sama seperti di DataKurir.jsx)
       const response = await fetch(
-        "http://localhost:3000/api/users?role=kurir",
+        "http://localhost:3000/api/kurir?page=1&limit=100",
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -371,89 +386,61 @@ export default function DataPengiriman() {
         const data = await response.json();
         console.log("Data kurirs response:", data);
 
-        if (data.success && data.data?.users) {
-          // Filter hanya kurir yang aktif
-          const activeKurirs = data.data.users
-            .filter((user) => user.is_active === true && user.role_id === 3) // role_id 3 biasanya untuk kurir
-            .map((kurir) => ({
-              id: kurir.id,
-              name: kurir.full_name || kurir.name || `Kurir ${kurir.id}`,
-              email: kurir.email,
-              phone: kurir.phone,
-              role_id: kurir.role_id,
-              is_active: kurir.is_active,
-              status: "available", // Default status
-              rating: 4.5, // Default rating
-              vehicle_type: "Motor", // Default vehicle
-              license_plate: "B XXXXXX", // Default license
-            }));
+        if (data.success && data.data?.kurirs) {
+          // Map data kurir sesuai struktur dari API
+          const kurirs = data.data.kurirs.map((kurir) => ({
+            id: kurir.id,
+            kurir_id: kurir.id, // ID kurir untuk assign
+            name: kurir.user?.full_name || kurir.user?.name || `Kurir ${kurir.id}`,
+            full_name: kurir.user?.full_name || kurir.user?.name,
+            email: kurir.user?.email || "",
+            phone: kurir.user?.phone || "",
+            status: kurir.status || "available",
+            rating: kurir.rating || 0,
+            vehicle_type: kurir.vehicle_type || "Motor",
+            vehicle_plate: kurir.vehicle_plate || "",
+            employee_id: kurir.employee_id || `KUR-${kurir.id}`,
+            current_location: kurir.current_location || "",
+            max_capacity: kurir.max_capacity || 0,
+            // Data user untuk display
+            user: kurir.user || null,
+          }));
 
-          setAvailableKurirs(activeKurirs);
-          console.log("Available kurirs:", activeKurirs);
+          setAvailableKurirs(kurirs);
+          console.log("Available kurirs:", kurirs);
+        } else if (data.success && Array.isArray(data.data)) {
+          // Fallback jika struktur berbeda (array langsung)
+          const kurirs = data.data.map((kurir) => ({
+            id: kurir.id || kurir.kurir_id,
+            kurir_id: kurir.id || kurir.kurir_id,
+            name: kurir.user?.full_name || kurir.user?.name || kurir.name || `Kurir ${kurir.id}`,
+            full_name: kurir.user?.full_name || kurir.user?.name || kurir.name,
+            email: kurir.user?.email || kurir.email || "",
+            phone: kurir.user?.phone || kurir.phone || "",
+            status: kurir.status || "available",
+            rating: kurir.rating || 0,
+            vehicle_type: kurir.vehicle_type || "Motor",
+            vehicle_plate: kurir.vehicle_plate || "",
+            employee_id: kurir.employee_id || `KUR-${kurir.id}`,
+            user: kurir.user || null,
+          }));
+          setAvailableKurirs(kurirs);
         } else {
-          // Fallback jika struktur berbeda
-          console.log("Menggunakan data kurir dari response berbeda");
-          const alternativeKurirs = await tryAlternativeKurirEndpoints(token);
-          setAvailableKurirs(alternativeKurirs);
+          console.warn("Struktur data kurir tidak dikenali:", data);
+          setAvailableKurirs(getDummyKurirs());
         }
       } else {
-        throw new Error("Gagal mengambil data kurir");
+        console.error("Response tidak OK:", response.status);
+        // Fallback ke dummy data
+        setAvailableKurirs(getDummyKurirs());
       }
     } catch (err) {
       console.error("Fetch kurirs error:", err);
-      // Coba endpoint alternatif
-      const token = getToken();
-      if (token) {
-        const alternativeKurirs = await tryAlternativeKurirEndpoints(token);
-        setAvailableKurirs(alternativeKurirs);
-      } else {
-        setAvailableKurirs(getDummyKurirs());
-      }
+      // Fallback ke dummy data jika error
+      setAvailableKurirs(getDummyKurirs());
     } finally {
       setLoadingKurirs(false);
     }
-  };
-
-  // Fungsi untuk mencoba endpoint alternatif
-  const tryAlternativeKurirEndpoints = async (token) => {
-    const endpoints = [
-      "http://localhost:3000/api/kurirs",
-      "http://localhost:3000/api/deliveries/kurirs",
-      "http://localhost:3000/api/staff/kurirs",
-    ];
-
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && (data.data?.kurirs || data.data?.users)) {
-            const kurirs = data.data.kurirs || data.data.users;
-            return kurirs.map((kurir) => ({
-              id: kurir.user?.id || kurir.id || kurir.kurir?.user_id,
-              name: kurir.user?.name || kurir.full_name || kurir.name,
-              email: kurir.user?.email || kurir.email,
-              phone: kurir.user?.phone || kurir.phone,
-              status: kurir.kurir?.status || kurir.status || "available",
-              rating: kurir.kurir?.rating || kurir.rating || 4.0,
-              vehicle_type: kurir.kurir?.vehicle_type || "Motor",
-              license_plate: kurir.kurir?.license_plate || "",
-            }));
-          }
-        }
-      } catch (err) {
-        console.log(`Gagal dari ${endpoint}:`, err.message);
-        continue;
-      }
-    }
-
-    return getDummyKurirs();
   };
 
   // Fetch customers untuk form tambah pengiriman
@@ -478,29 +465,37 @@ export default function DataPengiriman() {
       }
     } catch (err) {
       console.error("Fetch customers error:", err);
-      // Fallback to dummy customers
-      setCustomers([
-        {
-          id: 1,
-          name: "PT Toko Serba Ada",
-          email: "toko@example.com",
-          phone: "081234567895",
-        },
-        {
-          id: 2,
-          name: "CV Jaya Abadi",
-          email: "jaya@example.com",
-          phone: "081234567896",
-        },
-        {
-          id: 3,
-          name: "Toko Makmur Sejahtera",
-          email: "makmur@example.com",
-          phone: "081234567897",
-        },
-      ]);
     } finally {
       setLoadingCustomers(false);
+    }
+  };
+
+  // Fetch products untuk form tambah pengiriman
+  const fetchProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const token = getToken();
+      if (!token) return;
+
+      const response = await fetch("http://localhost:3000/api/products?page=1&limit=100", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          const productsList = data.data?.products || data.data || [];
+          setProducts(productsList);
+        }
+      }
+    } catch (err) {
+      console.error("Fetch products error:", err);
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
     }
   };
 
@@ -640,19 +635,19 @@ export default function DataPengiriman() {
   const getStatusBadge = (status) => {
     const styles = {
       pending: "bg-amber-100 text-amber-700 border-amber-200",
-      assigned: "bg-blue-100 text-blue-700 border-blue-200",
-      processing: "bg-blue-100 text-blue-700 border-blue-200",
+      picked_up: "bg-blue-100 text-blue-700 border-blue-200",
       in_transit: "bg-blue-100 text-blue-700 border-blue-200",
       delivered: "bg-emerald-100 text-emerald-700 border-emerald-200",
+      failed: "bg-red-100 text-red-700 border-red-200",
       cancelled: "bg-red-100 text-red-700 border-red-200",
     };
 
     const labels = {
       pending: "Menunggu",
-      assigned: "Sudah Ditugaskan",
-      processing: "Diproses",
-      in_transit: "Dalam Pengiriman",
+      picked_up: "Diambil",
+      in_transit: "Dalam Perjalanan",
       delivered: "Terkirim",
+      failed: "Gagal",
       cancelled: "Dibatalkan",
     };
 
@@ -842,16 +837,37 @@ export default function DataPengiriman() {
     setAddingDelivery(true);
 
     try {
-      // Validasi items
+      // Validasi items - harus pilih produk
       const validItems = newDelivery.items.filter(
-        (item) => item.name && item.quantity > 0 && item.unit_price
+        (item) => item.product_id && item.quantity > 0
       );
 
       if (validItems.length === 0) {
-        alert("Minimal satu barang dengan informasi lengkap diperlukan");
+        alert("Minimal satu barang dengan produk yang dipilih diperlukan");
         setAddingDelivery(false);
         return;
       }
+
+      // Ambil data produk untuk menghitung total
+      const itemsWithProduct = validItems.map((item) => {
+        const product = products.find((p) => p.id === parseInt(item.product_id));
+        return {
+          ...item,
+          product,
+        };
+      });
+
+      // Hitung total weight dan value dari produk
+      const totalWeight = itemsWithProduct.reduce(
+        (sum, item) =>
+          sum + parseFloat(item.product?.weight || 0) * parseInt(item.quantity),
+        0
+      );
+      const totalValue = itemsWithProduct.reduce(
+        (sum, item) =>
+          sum + parseFloat(item.product?.price || 0) * parseInt(item.quantity),
+        0
+      );
 
       // Format data untuk API
       const deliveryData = {
@@ -863,32 +879,19 @@ export default function DataPengiriman() {
         delivery_province: newDelivery.delivery_province,
         delivery_postal_code: newDelivery.delivery_postal_code,
         notes: newDelivery.notes,
-        total_weight: parseFloat(newDelivery.total_weight) || 0,
-        total_value: parseFloat(newDelivery.total_value) || 0,
+        total_weight: totalWeight,
+        total_value: totalValue,
         status: "pending",
-        items: validItems.map((item) => ({
-          product_name: item.name,
-          quantity: parseInt(item.quantity),
-          unit_price: parseFloat(item.unit_price),
-          notes: item.notes || "",
-        })),
+        items: validItems.map((item) => {
+          const product = products.find((p) => p.id === parseInt(item.product_id));
+          return {
+            product_id: parseInt(item.product_id),
+            quantity: parseInt(item.quantity),
+            unit_price: parseFloat(product?.price || 0),
+            notes: item.notes || "",
+          };
+        }),
       };
-
-      // Hitung total weight dan value jika belum diisi
-      if (!newDelivery.total_weight || !newDelivery.total_value) {
-        const totalWeight = validItems.reduce(
-          (sum, item) =>
-            sum + parseFloat(item.weight || 1) * parseInt(item.quantity),
-          0
-        );
-        const totalValue = validItems.reduce(
-          (sum, item) =>
-            sum + parseFloat(item.unit_price) * parseInt(item.quantity),
-          0
-        );
-        deliveryData.total_weight = totalWeight;
-        deliveryData.total_value = totalValue;
-      }
 
       const response = await fetch("http://localhost:3000/api/deliveries", {
         method: "POST",
@@ -915,7 +918,7 @@ export default function DataPengiriman() {
           total_weight: "",
           total_value: "",
           items: [
-            { name: "", quantity: 1, unit_price: "", weight: 1, notes: "" },
+            { product_id: "", quantity: 1, notes: "" },
           ],
         });
         fetchDeliveries();
@@ -931,13 +934,181 @@ export default function DataPengiriman() {
     }
   };
 
+  // Fungsi untuk handle edit click
+  const handleEditClick = async (delivery) => {
+    setEditingDelivery(delivery);
+    
+    // Fetch delivery detail untuk mendapatkan items
+    const token = getToken();
+    if (!token) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/deliveries/${delivery.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          const deliveryData = data.data.delivery || data.data;
+          const items = data.data.items || [];
+          
+          setEditDelivery({
+            customer_id: deliveryData.customer_id?.toString() || "",
+            warehouse_id: deliveryData.warehouse_id || 1,
+            pickup_address: deliveryData.pickup_address || "Gudang Utama",
+            delivery_address: deliveryData.delivery_address || "",
+            delivery_city: deliveryData.delivery_city || "",
+            delivery_province: deliveryData.delivery_province || "",
+            delivery_postal_code: deliveryData.delivery_postal_code || "",
+            notes: deliveryData.notes || "",
+            items: items.length > 0 
+              ? items.map((item) => ({
+                  product_id: item.product_id?.toString() || "",
+                  quantity: item.quantity || 1,
+                  notes: item.notes || "",
+                }))
+              : [{ product_id: "", quantity: 1, notes: "" }],
+          });
+          
+          // Fetch customers and products untuk dropdown
+          fetchCustomers();
+          fetchProducts();
+          setShowEditModal(true);
+        }
+      }
+    } catch (error) {
+      console.error("Fetch delivery detail error:", error);
+      alert("Gagal memuat data pengiriman untuk diedit");
+    }
+  };
+
+  // Fungsi untuk update pengiriman
+  const handleUpdateDelivery = async () => {
+    if (!editingDelivery) return;
+
+    if (!editDelivery.customer_id) {
+      alert("Silakan pilih customer");
+      return;
+    }
+
+    if (!editDelivery.delivery_address) {
+      alert("Alamat pengiriman wajib diisi");
+      return;
+    }
+
+    const token = getToken();
+    if (!token) return;
+
+    setUpdatingDelivery(true);
+
+    try {
+      // Validasi items
+      const validItems = editDelivery.items.filter(
+        (item) => item.product_id && item.quantity > 0
+      );
+
+      if (validItems.length === 0) {
+        alert("Minimal satu barang dengan produk yang dipilih diperlukan");
+        setUpdatingDelivery(false);
+        return;
+      }
+
+      // Ambil data produk untuk menghitung total
+      const itemsWithProduct = validItems.map((item) => {
+        const product = products.find((p) => p.id === parseInt(item.product_id));
+        return {
+          ...item,
+          product,
+        };
+      });
+
+      // Hitung total weight dan value dari produk
+      const totalWeight = itemsWithProduct.reduce(
+        (sum, item) =>
+          sum + parseFloat(item.product?.weight || 0) * parseInt(item.quantity),
+        0
+      );
+      const totalValue = itemsWithProduct.reduce(
+        (sum, item) =>
+          sum + parseFloat(item.product?.price || 0) * parseInt(item.quantity),
+        0
+      );
+
+      // Format data untuk API
+      const deliveryData = {
+        customer_id: parseInt(editDelivery.customer_id),
+        warehouse_id: editDelivery.warehouse_id || 1,
+        pickup_address: editDelivery.pickup_address || "Gudang Utama",
+        delivery_address: editDelivery.delivery_address,
+        delivery_city: editDelivery.delivery_city,
+        delivery_province: editDelivery.delivery_province,
+        delivery_postal_code: editDelivery.delivery_postal_code,
+        notes: editDelivery.notes,
+        items: validItems.map((item) => {
+          const product = products.find((p) => p.id === parseInt(item.product_id));
+          return {
+            product_id: parseInt(item.product_id),
+            quantity: parseInt(item.quantity),
+            unit_price: parseFloat(product?.price || 0),
+            notes: item.notes || "",
+          };
+        }),
+      };
+
+      const response = await fetch(
+        `http://localhost:3000/api/deliveries/${editingDelivery.id}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(deliveryData),
+        }
+      );
+
+      if (response.ok) {
+        alert("Pengiriman berhasil diperbarui");
+        setShowEditModal(false);
+        setEditingDelivery(null);
+        fetchDeliveries();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Gagal memperbarui pengiriman");
+      }
+    } catch (error) {
+      console.error("Update delivery error:", error);
+      alert(`Gagal memperbarui pengiriman: ${error.message}`);
+    } finally {
+      setUpdatingDelivery(false);
+    }
+  };
+
   // Fungsi untuk menambah item barang
   const addItemField = () => {
     setNewDelivery((prev) => ({
       ...prev,
       items: [
         ...prev.items,
-        { name: "", quantity: 1, unit_price: "", weight: 1, notes: "" },
+        { product_id: "", quantity: 1, notes: "" },
+      ],
+    }));
+  };
+
+  // Fungsi untuk menambah item barang di edit form
+  const addEditItemField = () => {
+    setEditDelivery((prev) => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        { product_id: "", quantity: 1, notes: "" },
       ],
     }));
   };
@@ -950,9 +1121,27 @@ export default function DataPengiriman() {
     }));
   };
 
+  // Fungsi untuk menghapus item barang di edit form
+  const removeEditItemField = (index) => {
+    setEditDelivery((prev) => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index),
+    }));
+  };
+
   // Fungsi untuk update item
   const updateItemField = (index, field, value) => {
     setNewDelivery((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item
+      ),
+    }));
+  };
+
+  // Fungsi untuk update item di edit form
+  const updateEditItemField = (index, field, value) => {
+    setEditDelivery((prev) => ({
       ...prev,
       items: prev.items.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
@@ -1011,8 +1200,8 @@ export default function DataPengiriman() {
       trend: `${kurirStats.total || 0} total kurir`,
     },
     {
-      label: "Dalam Pengiriman",
-      value: pengirimanData.filter((p) => p.status === "in_transit").length,
+      label: "Dalam Perjalanan",
+      value: pengirimanData.filter((p) => p.status === "in_transit" || p.status === "picked_up").length,
       icon: <TrendingUp size={20} />,
       color: "blue",
       trend: "aktif",
@@ -1117,10 +1306,10 @@ export default function DataPengiriman() {
                 >
                   <option value="all">Semua Status</option>
                   <option value="pending">Menunggu</option>
-                  <option value="assigned">Sudah Ditugaskan</option>
-                  <option value="processing">Diproses</option>
-                  <option value="in_transit">Dalam Pengiriman</option>
+                  <option value="picked_up">Diambil</option>
+                  <option value="in_transit">Dalam Perjalanan</option>
                   <option value="delivered">Terkirim</option>
+                  <option value="failed">Gagal</option>
                   <option value="cancelled">Dibatalkan</option>
                 </select>
               </div>
@@ -1150,6 +1339,7 @@ export default function DataPengiriman() {
                   onClick={() => {
                     if (userRole === "admin") {
                       fetchCustomers();
+                      fetchProducts();
                       setShowAddModal(true);
                     } else {
                       alert("Hanya admin yang dapat menambah pengiriman baru");
@@ -1235,8 +1425,23 @@ export default function DataPengiriman() {
                               {item.customer_name}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Package className="w-3 h-3 text-slate-400" />
+                          <div className="flex items-start gap-2">
+                            {deliveryItems[item.id] && deliveryItems[item.id].length > 0 && deliveryItems[item.id][0]?.product?.image_url ? (
+                              <img
+                                src={
+                                  deliveryItems[item.id][0].product.image_url.startsWith('http')
+                                    ? deliveryItems[item.id][0].product.image_url
+                                    : `http://localhost:3000${deliveryItems[item.id][0].product.image_url}`
+                                }
+                                alt={deliveryItems[item.id][0].product?.name || "Produk"}
+                                className="w-8 h-8 object-cover rounded border border-slate-200 flex-shrink-0"
+                                onError={(e) => {
+                                  e.target.src = "https://via.placeholder.com/32?text=No+Image";
+                                }}
+                              />
+                            ) : (
+                              <Package className="w-3 h-3 text-slate-400 flex-shrink-0 mt-1" />
+                            )}
                             <span className="text-xs text-slate-600 truncate max-w-xs">
                               {item.barang}
                             </span>
@@ -1318,9 +1523,7 @@ export default function DataPengiriman() {
                           {/* Edit Button - Only for admin */}
                           {userRole === "admin" && (
                             <button
-                              onClick={() =>
-                                (window.location.href = `/pengiriman/edit/${item.id}`)
-                              }
+                              onClick={() => handleEditClick(item)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200 group"
                               title="Edit"
                             >
@@ -1517,21 +1720,43 @@ export default function DataPengiriman() {
                                           key={idx}
                                           className="bg-slate-50 p-2 rounded border"
                                         >
-                                          <p className="font-medium text-sm">
-                                            {deliveryItem.product?.name ||
-                                              `Barang ${idx + 1}`}
-                                          </p>
-                                          <p className="text-xs text-slate-600">
-                                            {deliveryItem.quantity} x Rp{" "}
-                                            {parseFloat(
-                                              deliveryItem.unit_price || 0
-                                            ).toLocaleString("id-ID")}
-                                          </p>
-                                          {deliveryItem.notes && (
-                                            <p className="text-xs text-slate-500 mt-1 italic">
-                                              Catatan: {deliveryItem.notes}
-                                            </p>
-                                          )}
+                                          <div className="flex items-start gap-2">
+                                            {deliveryItem.product?.image_url ? (
+                                              <img
+                                                src={
+                                                  deliveryItem.product.image_url.startsWith('http')
+                                                    ? deliveryItem.product.image_url
+                                                    : `http://localhost:3000${deliveryItem.product.image_url}`
+                                                }
+                                                alt={deliveryItem.product?.name || `Barang ${idx + 1}`}
+                                                className="w-10 h-10 object-cover rounded border border-slate-200 flex-shrink-0"
+                                                onError={(e) => {
+                                                  e.target.src = "https://via.placeholder.com/40?text=No+Image";
+                                                }}
+                                              />
+                                            ) : (
+                                              <div className="w-10 h-10 bg-slate-200 rounded border border-slate-300 flex items-center justify-center flex-shrink-0">
+                                                <Package className="w-5 h-5 text-slate-400" />
+                                              </div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                              <p className="font-medium text-sm">
+                                                {deliveryItem.product?.name ||
+                                                  `Barang ${idx + 1}`}
+                                              </p>
+                                              <p className="text-xs text-slate-600">
+                                                {deliveryItem.quantity} x Rp{" "}
+                                                {parseFloat(
+                                                  deliveryItem.unit_price || 0
+                                                ).toLocaleString("id-ID")}
+                                              </p>
+                                              {deliveryItem.notes && (
+                                                <p className="text-xs text-slate-500 mt-1 italic">
+                                                  Catatan: {deliveryItem.notes}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
                                         </div>
                                       )
                                     )}
@@ -1888,7 +2113,7 @@ export default function DataPengiriman() {
                           <thead>
                             <tr className="bg-slate-100">
                               <th className="px-4 py-2 text-left text-sm font-semibold text-slate-700">
-                                Nama Barang
+                                Produk
                               </th>
                               <th className="px-4 py-2 text-left text-sm font-semibold text-slate-700">
                                 SKU
@@ -1915,7 +2140,29 @@ export default function DataPengiriman() {
                                   className="border-b border-slate-200"
                                 >
                                   <td className="px-4 py-3">
-                                    {item.product?.name || `Barang ${idx + 1}`}
+                                    <div className="flex items-center gap-3">
+                                      {item.product?.image_url ? (
+                                        <img
+                                          src={
+                                            item.product.image_url.startsWith('http')
+                                              ? item.product.image_url
+                                              : `http://localhost:3000${item.product.image_url}`
+                                          }
+                                          alt={item.product?.name || `Barang ${idx + 1}`}
+                                          className="w-12 h-12 object-cover rounded border border-slate-200"
+                                          onError={(e) => {
+                                            e.target.src = "https://via.placeholder.com/48?text=No+Image";
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="w-12 h-12 bg-slate-200 rounded border border-slate-300 flex items-center justify-center">
+                                          <Package className="w-6 h-6 text-slate-400" />
+                                        </div>
+                                      )}
+                                      <span className="font-medium">
+                                        {item.product?.name || `Barang ${idx + 1}`}
+                                      </span>
+                                    </div>
                                   </td>
                                   <td className="px-4 py-3 text-sm text-slate-600">
                                     {item.product?.sku || "-"}
@@ -1963,40 +2210,44 @@ export default function DataPengiriman() {
                     selectedDelivery.status === "pending" && (
                       <button
                         onClick={() =>
-                          handleUpdateStatus(selectedDelivery.id, "assigned")
+                          handleUpdateStatus(selectedDelivery.id, "picked_up")
                         }
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                       >
-                        Tandai Sudah Ditugaskan
+                        Tandai Diambil
                       </button>
                     )}
-                  {selectedDelivery.kurir_id &&
-                    selectedDelivery.status === "assigned" && (
+                  {selectedDelivery.status === "picked_up" && (
+                    <button
+                      onClick={() =>
+                        handleUpdateStatus(selectedDelivery.id, "in_transit")
+                      }
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Tandai Dalam Perjalanan
+                    </button>
+                  )}
+                  {selectedDelivery.status === "in_transit" && (
+                    <button
+                      onClick={() =>
+                        handleUpdateStatus(selectedDelivery.id, "delivered")
+                      }
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                    >
+                      Tandai Terkirim
+                    </button>
+                  )}
+                  {selectedDelivery.status !== "delivered" &&
+                    selectedDelivery.status !== "cancelled" && (
                       <button
                         onClick={() =>
-                          handleUpdateStatus(selectedDelivery.id, "processing")
+                          handleUpdateStatus(selectedDelivery.id, "failed")
                         }
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                       >
-                        Tandai Diproses
+                        Tandai Gagal
                       </button>
                     )}
-                  <button
-                    onClick={() =>
-                      handleUpdateStatus(selectedDelivery.id, "in_transit")
-                    }
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Tandai Dalam Pengiriman
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleUpdateStatus(selectedDelivery.id, "delivered")
-                    }
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-                  >
-                    Tandai Terkirim
-                  </button>
                   {selectedDelivery.status !== "cancelled" && (
                     <button
                       onClick={() => handleCancelDelivery(selectedDelivery.id)}
@@ -2005,13 +2256,384 @@ export default function DataPengiriman() {
                       Batalkan Pengiriman
                     </button>
                   )}
-                  <button
-                    onClick={() =>
-                      (window.location.href = `/pengiriman/edit/${selectedDelivery.id}`)
+                  {userRole === "admin" && (
+                    <button
+                      onClick={() => handleEditClick(selectedDelivery)}
+                      className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
+                    >
+                      Edit Pengiriman
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Pengiriman Modal */}
+      {showEditModal && editingDelivery && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                  <Edit2 className="w-5 h-5" />
+                  Edit Pengiriman
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingDelivery(null);
+                  }}
+                  className="p-2 hover:bg-slate-100 rounded-lg"
+                  disabled={updatingDelivery}
+                >
+                  <XCircle className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Customer Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Customer *
+                  </label>
+                  {loadingCustomers ? (
+                    <div className="flex items-center gap-2 py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm text-slate-500">Memuat customer...</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={editDelivery.customer_id}
+                      onChange={(e) =>
+                        setEditDelivery({ ...editDelivery, customer_id: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">-- Pilih Customer --</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.name} - {customer.email}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Address Fields */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Alamat Pengiriman *
+                    </label>
+                    <textarea
+                      value={editDelivery.delivery_address}
+                      onChange={(e) =>
+                        setEditDelivery({ ...editDelivery, delivery_address: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows="3"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Alamat Pickup
+                    </label>
+                    <input
+                      type="text"
+                      value={editDelivery.pickup_address}
+                      onChange={(e) =>
+                        setEditDelivery({ ...editDelivery, pickup_address: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Kota
+                    </label>
+                    <input
+                      type="text"
+                      value={editDelivery.delivery_city}
+                      onChange={(e) =>
+                        setEditDelivery({ ...editDelivery, delivery_city: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Provinsi
+                    </label>
+                    <input
+                      type="text"
+                      value={editDelivery.delivery_province}
+                      onChange={(e) =>
+                        setEditDelivery({ ...editDelivery, delivery_province: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Kode Pos
+                    </label>
+                    <input
+                      type="text"
+                      value={editDelivery.delivery_postal_code}
+                      onChange={(e) =>
+                        setEditDelivery({ ...editDelivery, delivery_postal_code: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Catatan
+                  </label>
+                  <textarea
+                    value={editDelivery.notes}
+                    onChange={(e) =>
+                      setEditDelivery({ ...editDelivery, notes: e.target.value })
                     }
-                    className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows="2"
+                  />
+                </div>
+
+                {/* Items Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-slate-800">
+                      Daftar Barang
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={addEditItemField}
+                      className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                    >
+                      + Tambah Barang
+                    </button>
+                  </div>
+
+                  {editDelivery.items.map((item, index) => (
+                    <div
+                      key={index}
+                      className="bg-slate-50 p-4 rounded-lg mb-3 border border-slate-200"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-medium text-slate-700">
+                          Barang #{index + 1}
+                        </span>
+                        {editDelivery.items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeEditItemField(index)}
+                            className="text-red-600 hover:text-red-800 text-sm"
+                          >
+                            Hapus
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Product Selection */}
+                      <div className="mb-3">
+                        <label className="block text-xs text-slate-600 mb-1">
+                          Pilih Produk *
+                        </label>
+                        {loadingProducts ? (
+                          <div className="flex items-center gap-2 py-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="text-sm text-slate-500">Memuat produk...</span>
+                          </div>
+                        ) : (
+                          <select
+                            value={item.product_id}
+                            onChange={(e) =>
+                              updateEditItemField(index, "product_id", e.target.value)
+                            }
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            required
+                          >
+                            <option value="">-- Pilih Produk --</option>
+                            {products.map((product) => (
+                              <option key={product.id} value={product.id}>
+                                {product.name} - {product.sku} {product.price ? `(Rp ${parseFloat(product.price).toLocaleString("id-ID")})` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {/* Display selected product info */}
+                        {item.product_id && (() => {
+                          const selectedProduct = products.find((p) => p.id === parseInt(item.product_id));
+                          if (!selectedProduct) return null;
+                          return (
+                            <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                              <div className="flex items-start gap-3">
+                                {selectedProduct.image_url ? (
+                                  <img
+                                    src={
+                                      selectedProduct.image_url.startsWith('http')
+                                        ? selectedProduct.image_url
+                                        : `http://localhost:3000${selectedProduct.image_url}`
+                                    }
+                                    alt={selectedProduct.name}
+                                    className="w-16 h-16 object-cover rounded border border-slate-200"
+                                    onError={(e) => {
+                                      e.target.src = "https://via.placeholder.com/64?text=No+Image";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-16 h-16 bg-slate-200 rounded border border-slate-300 flex items-center justify-center">
+                                    <Package className="w-8 h-8 text-slate-400" />
+                                  </div>
+                                )}
+                                <div className="flex-1">
+                                  <p className="font-medium text-slate-800 text-sm">{selectedProduct.name}</p>
+                                  <p className="text-xs text-slate-600">SKU: {selectedProduct.sku}</p>
+                                  {selectedProduct.price && (
+                                    <p className="text-xs text-blue-600 font-medium">
+                                      Harga: Rp {parseFloat(selectedProduct.price).toLocaleString("id-ID")}
+                                    </p>
+                                  )}
+                                  {selectedProduct.weight && (
+                                    <p className="text-xs text-slate-500">
+                                      Berat: {selectedProduct.weight} {selectedProduct.unit || "kg"}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-slate-600 mb-1">
+                            Jumlah *
+                          </label>
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) =>
+                              updateEditItemField(
+                                index,
+                                "quantity",
+                                parseInt(e.target.value) || 1
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            min="1"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-600 mb-1">
+                            Catatan Barang (Opsional)
+                          </label>
+                          <input
+                            type="text"
+                            value={item.notes}
+                            onChange={(e) =>
+                              updateEditItemField(index, "notes", e.target.value)
+                            }
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            placeholder="Contoh: Warna silver, garansi 1 tahun"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Summary */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h3 className="font-semibold text-blue-800 mb-2">
+                    Ringkasan
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-slate-600">Total Barang:</span>
+                      <span className="ml-2 font-medium">
+                        {editDelivery.items.filter((item) => item.product_id).length}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-600">Estimasi Berat:</span>
+                      <span className="ml-2 font-medium">
+                        {editDelivery.items
+                          .reduce((sum, item) => {
+                            const product = products.find((p) => p.id === parseInt(item.product_id));
+                            return sum + parseFloat(product?.weight || 0) * parseInt(item.quantity || 1);
+                          }, 0)
+                          .toFixed(2)}{" "}
+                        kg
+                      </span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-slate-600">Total Nilai:</span>
+                      <span className="ml-2 font-medium">
+                        Rp{" "}
+                        {editDelivery.items
+                          .reduce((sum, item) => {
+                            const product = products.find((p) => p.id === parseInt(item.product_id));
+                            return sum + parseFloat(product?.price || 0) * parseInt(item.quantity || 1);
+                          }, 0)
+                          .toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4 border-t">
+                  <button
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingDelivery(null);
+                    }}
+                    className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 flex-1"
+                    disabled={updatingDelivery}
                   >
-                    Edit Pengiriman
+                    Batal
+                  </button>
+                  <button
+                    onClick={handleUpdateDelivery}
+                    disabled={
+                      !editDelivery.customer_id ||
+                      !editDelivery.delivery_address ||
+                      updatingDelivery
+                    }
+                    className={`px-4 py-2 text-white rounded-lg flex-1 flex items-center justify-center gap-2 ${
+                      !editDelivery.customer_id ||
+                      !editDelivery.delivery_address ||
+                      updatingDelivery
+                        ? "bg-slate-400 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
+                  >
+                    {updatingDelivery ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Memperbarui...
+                      </>
+                    ) : (
+                      <>
+                        <Edit2 className="w-4 h-4" />
+                        Perbarui Pengiriman
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -2092,16 +2714,19 @@ export default function DataPengiriman() {
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                      {availableKurirs.map((kurir) => (
+                      {availableKurirs.map((kurir) => {
+                        // Gunakan kurir_id jika ada, jika tidak gunakan id
+                        const kurirId = kurir.kurir_id || kurir.id;
+                        return (
                         <div
-                          key={kurir.id}
+                          key={kurirId}
                           className={`p-3 border rounded-lg cursor-pointer transition-all ${
-                            selectedKurirId === kurir.id.toString()
+                            selectedKurirId === kurirId.toString()
                               ? "border-blue-500 bg-blue-50 shadow-sm"
                               : "border-slate-300 hover:border-blue-300 hover:shadow-sm"
                           }`}
                           onClick={() =>
-                            setSelectedKurirId(kurir.id.toString())
+                            setSelectedKurirId(kurirId.toString())
                           }
                         >
                           <div className="flex items-start justify-between">
@@ -2157,14 +2782,15 @@ export default function DataPengiriman() {
                               </div>
                             </div>
 
-                            {selectedKurirId === kurir.id.toString() && (
+                            {selectedKurirId === kurirId.toString() && (
                               <div className="ml-3 p-1 bg-blue-600 rounded-full self-center">
                                 <Check className="w-4 h-4 text-white" />
                               </div>
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2417,22 +3043,79 @@ export default function DataPengiriman() {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div className="md:col-span-2">
-                          <label className="block text-xs text-slate-600 mb-1">
-                            Nama Barang *
-                          </label>
-                          <input
-                            type="text"
-                            value={item.name}
+                      {/* Product Selection */}
+                      <div className="mb-3">
+                        <label className="block text-xs text-slate-600 mb-1">
+                          Pilih Produk *
+                        </label>
+                        {loadingProducts ? (
+                          <div className="flex items-center gap-2 py-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="text-sm text-slate-500">Memuat produk...</span>
+                          </div>
+                        ) : (
+                          <select
+                            value={item.product_id}
                             onChange={(e) =>
-                              updateItemField(index, "name", e.target.value)
+                              updateItemField(index, "product_id", e.target.value)
                             }
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            placeholder="Contoh: Laptop Dell XPS 13"
                             required
-                          />
-                        </div>
+                          >
+                            <option value="">-- Pilih Produk --</option>
+                            {products.map((product) => (
+                              <option key={product.id} value={product.id}>
+                                {product.name} - {product.sku} {product.price ? `(Rp ${parseFloat(product.price).toLocaleString("id-ID")})` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {/* Display selected product info */}
+                        {item.product_id && (() => {
+                          const selectedProduct = products.find((p) => p.id === parseInt(item.product_id));
+                          if (!selectedProduct) return null;
+                          return (
+                            <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                              <div className="flex items-start gap-3">
+                                {selectedProduct.image_url ? (
+                                  <img
+                                    src={
+                                      selectedProduct.image_url.startsWith('http')
+                                        ? selectedProduct.image_url
+                                        : `http://localhost:3000${selectedProduct.image_url}`
+                                    }
+                                    alt={selectedProduct.name}
+                                    className="w-16 h-16 object-cover rounded border border-slate-200"
+                                    onError={(e) => {
+                                      e.target.src = "https://via.placeholder.com/64?text=No+Image";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-16 h-16 bg-slate-200 rounded border border-slate-300 flex items-center justify-center">
+                                    <Package className="w-8 h-8 text-slate-400" />
+                                  </div>
+                                )}
+                                <div className="flex-1">
+                                  <p className="font-medium text-slate-800 text-sm">{selectedProduct.name}</p>
+                                  <p className="text-xs text-slate-600">SKU: {selectedProduct.sku}</p>
+                                  {selectedProduct.price && (
+                                    <p className="text-xs text-blue-600 font-medium">
+                                      Harga: Rp {parseFloat(selectedProduct.price).toLocaleString("id-ID")}
+                                    </p>
+                                  )}
+                                  {selectedProduct.weight && (
+                                    <p className="text-xs text-slate-500">
+                                      Berat: {selectedProduct.weight} {selectedProduct.unit || "kg"}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs text-slate-600 mb-1">
                             Jumlah *
@@ -2453,44 +3136,6 @@ export default function DataPengiriman() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-600 mb-1">
-                            Harga Satuan (Rp) *
-                          </label>
-                          <input
-                            type="number"
-                            value={item.unit_price}
-                            onChange={(e) =>
-                              updateItemField(
-                                index,
-                                "unit_price",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            placeholder="1500000"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-600 mb-1">
-                            Berat per unit (kg)
-                          </label>
-                          <input
-                            type="number"
-                            value={item.weight}
-                            onChange={(e) =>
-                              updateItemField(
-                                index,
-                                "weight",
-                                parseFloat(e.target.value) || 1
-                              )
-                            }
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            placeholder="1"
-                            step="0.01"
-                          />
-                        </div>
-                        <div className="md:col-span-4">
                           <label className="block text-xs text-slate-600 mb-1">
                             Catatan Barang (Opsional)
                           </label>
@@ -2518,20 +3163,17 @@ export default function DataPengiriman() {
                     <div>
                       <span className="text-slate-600">Total Barang:</span>
                       <span className="ml-2 font-medium">
-                        {newDelivery.items.filter((item) => item.name).length}
+                        {newDelivery.items.filter((item) => item.product_id).length}
                       </span>
                     </div>
                     <div>
                       <span className="text-slate-600">Estimasi Berat:</span>
                       <span className="ml-2 font-medium">
                         {newDelivery.items
-                          .reduce(
-                            (sum, item) =>
-                              sum +
-                              parseFloat(item.weight || 1) *
-                                parseInt(item.quantity || 1),
-                            0
-                          )
+                          .reduce((sum, item) => {
+                            const product = products.find((p) => p.id === parseInt(item.product_id));
+                            return sum + parseFloat(product?.weight || 0) * parseInt(item.quantity || 1);
+                          }, 0)
                           .toFixed(2)}{" "}
                         kg
                       </span>
@@ -2541,13 +3183,10 @@ export default function DataPengiriman() {
                       <span className="ml-2 font-medium">
                         Rp{" "}
                         {newDelivery.items
-                          .reduce(
-                            (sum, item) =>
-                              sum +
-                              parseFloat(item.unit_price || 0) *
-                                parseInt(item.quantity || 1),
-                            0
-                          )
+                          .reduce((sum, item) => {
+                            const product = products.find((p) => p.id === parseInt(item.product_id));
+                            return sum + parseFloat(product?.price || 0) * parseInt(item.quantity || 1);
+                          }, 0)
                           .toLocaleString("id-ID")}
                       </span>
                     </div>
